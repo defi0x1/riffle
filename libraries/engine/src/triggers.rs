@@ -248,11 +248,11 @@ mod tests {
             history: history.clone(),
             is_weekend_utc: false,
         };
+        let (out_weekday, _) = evaluate(&input_weekday, Regime::V2, &cfg());
         let input_weekend = TriggersInput {
             is_weekend_utc: true,
             ..input_weekday
         };
-        let (out_weekday, _) = evaluate(&input_weekday, Regime::V2, &cfg());
         let (out_weekend, _) = evaluate(&input_weekend, Regime::V2, &cfg());
         assert!(out_weekday.exit);
         assert!(!out_weekend.exit);

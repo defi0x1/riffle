@@ -12,14 +12,14 @@ mod rationale;
 // than glob re-exports -- callers reach them as `engine::regime::classify_candidate`,
 // `engine::triggers::evaluate`, and so on. `pipeline` composes all of them behind
 // `screen`/`rank`, which is the entry point most callers want.
-pub mod volatility;
+pub mod fee_forecast;
+pub mod organic_flow;
+pub mod ranking;
 pub mod regime;
 pub mod risk_gate;
-pub mod organic_flow;
-pub mod fee_forecast;
-pub mod ranking;
 pub mod sizing;
 pub mod triggers;
+pub mod volatility;
 
 mod config;
 pub use config::*;

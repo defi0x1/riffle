@@ -1,7 +1,6 @@
-//! Worked-example fixtures (`10-worked-examples.md`, Examples A and B), exercised
-//! end-to-end through the public API rather than through any one formula in isolation.
-//! Individual formulas are also hand-checked in their own modules; this file is the
-//! integration check that they compose to the numbers the spec actually publishes.
+//! Two reference cases, A and B, exercised end-to-end through the public API rather than
+//! through any one formula in isolation. Individual formulas are hand-checked in their own
+//! modules; this file is the integration check that they compose to the expected numbers.
 
 #[cfg(test)]
 mod tests {

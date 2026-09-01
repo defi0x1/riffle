@@ -210,11 +210,11 @@ mod tests {
         assert!((r - 3.75).abs() < 1e-9, "got {r}");
     }
 
-    /// Example B is the deliberately-marginal case (10-worked-examples.md, "How to read
-    /// this example"): on swap fees alone `R_org = 1.94 < R_min = 3.0` for V2, and the
-    /// post-merge rule is that LM yield never counts toward `R_org` (only toward the
-    /// `Y_fee` hurdle). An engine that accepts this pool has a bug or a silently-moved
-    /// `R_min` threshold — this is the single most important assertion in the crate.
+    /// Example B is the deliberately marginal case: on swap fees alone its organic ratio
+    /// is 1.94 against a floor of 3.0, so it must be rejected. Liquidity-mining yield
+    /// counts toward the yield hurdle but never toward the ratio, which is what keeps this
+    /// a rejection. An engine that accepts this pool has a bug or a silently moved
+    /// threshold — the single most important assertion in the crate.
     #[test]
     fn test_worked_example_b_rejects() {
         const R_MIN_V2: f64 = 3.0;

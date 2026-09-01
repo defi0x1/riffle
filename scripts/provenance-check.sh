@@ -11,6 +11,11 @@ set -eu
 
 TERMS='datapipe|cp-amm-tracker|rpc-relayer|blacklist-rs|blacklist-client|token-service|meteora-interface|lb-clmm-ext|yellowstone-vixen|swaps_agg|pool_historical_tvl|position_with_bin|cumulative_volume_snapshots|min_token_ratio|calculate_tvl_with_token_ratio|m031_create_bins_table'
 
+# References to the private planning repository. These leak its structure, and its
+# phrasing can leak its contents; they also read as machine-generated. The reason belongs
+# in the comment, not a document coordinate.
+PLANREFS='plans/[0-9]|[0-9][0-9]-[a-z-]+\.md|§|\[A-?[0-9]'
+
 SELF='scripts/provenance-check.sh'
 
 cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -27,8 +32,8 @@ fi
 found=0
 for f in $FILES; do
     [ -f "$f" ] || continue
-    if grep -niE "$TERMS" "$f" >/dev/null 2>&1; then
-        grep -niE "$TERMS" "$f" | while IFS=: read -r lineno rest; do
+    if grep -niE "$TERMS|$PLANREFS" "$f" >/dev/null 2>&1; then
+        grep -niE "$TERMS|$PLANREFS" "$f" | while IFS=: read -r lineno rest; do
             echo "provenance: forbidden term in $f:$lineno: $rest"
         done
         found=1
