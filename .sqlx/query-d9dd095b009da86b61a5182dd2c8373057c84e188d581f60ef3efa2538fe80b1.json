@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT config_hash, ts\n        FROM signals\n        ORDER BY ts DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "config_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "ts",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d9dd095b009da86b61a5182dd2c8373057c84e188d581f60ef3efa2538fe80b1"
+}

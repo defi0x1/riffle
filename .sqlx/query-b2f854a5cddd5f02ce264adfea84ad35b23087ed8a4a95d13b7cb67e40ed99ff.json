@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, pool_address, venue, opened_at, entry_price, entry_active_bin,\n               lower_bin, upper_bin, size_usd, size_per_bin\n        FROM paper_positions\n        WHERE closed_at IS NULL\n        ORDER BY opened_at\n        ",
+  "query": "\n        SELECT pp.id, pp.pool_address, pp.venue, pp.opened_at, pp.entry_price, pp.entry_active_bin,\n               pp.lower_bin, pp.upper_bin, pp.size_usd, pp.size_per_bin, d.bin_step\n        FROM paper_positions pp\n        JOIN dlmm_pool_params d ON d.pool_address = pp.pool_address\n        WHERE pp.closed_at IS NULL\n        ORDER BY pp.opened_at\n        ",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,11 @@
         "ordinal": 9,
         "name": "size_per_bin",
         "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "bin_step",
+        "type_info": "Int2"
       }
     ],
     "parameters": {
@@ -67,8 +72,9 @@
       true,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "1ad0c7f114b9904d5fa00be7bebef413e9a6e1d19b02b965682cd30d0f239304"
+  "hash": "b2f854a5cddd5f02ce264adfea84ad35b23087ed8a4a95d13b7cb67e40ed99ff"
 }

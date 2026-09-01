@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            p.pool_address, p.venue, p.token_x, p.token_y, p.tvl_usd, p.tier,\n            m.bucket_start as \"bucket_start!\", i.quality, m.volume_usd, i.vol_change\n        FROM pool_metrics_1h m\n        JOIN pools p ON p.pool_address = m.pool_address\n        JOIN indicators_1h i ON i.pool_address = m.pool_address AND i.bucket_start = m.bucket_start\n        WHERE p.venue = $1\n          AND m.bucket_start = (SELECT max(bucket_start) FROM pool_metrics_1h)\n        ORDER BY m.volume_usd DESC NULLS LAST\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "token_x",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "token_y",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "tvl_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "tier",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "bucket_start!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "quality",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "volume_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "vol_change",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "e48820276645f90aa076275ffe4eee7a2f88e4c4d22f378c583cd4a2438fe28f"
+}

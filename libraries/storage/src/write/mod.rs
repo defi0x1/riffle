@@ -39,3 +39,6 @@ pub use tier::*;
 
 mod pipeline_state;
 pub use pipeline_state::*;
+
+mod muted_pools;
+pub use muted_pools::*;

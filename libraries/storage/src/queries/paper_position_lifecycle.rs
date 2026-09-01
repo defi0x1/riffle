@@ -16,6 +16,9 @@ pub struct OpenPaperPosition {
     pub upper_bin: Option<i32>,
     pub size_usd: Option<Decimal>,
     pub size_per_bin: Option<Decimal>,
+    // Carried along so a mark can convert the bin range back into a fractional price width
+    // for the impermanent-loss estimate without a second lookup.
+    pub bin_step: i16,
 }
 
 // Marked every 5 minutes for the lifetime of the position, so this is the whole open set on
@@ -25,11 +28,12 @@ pub async fn open_paper_positions(pool: &PgPool) -> eyre::Result<Vec<OpenPaperPo
     let rows = sqlx::query_as!(
         OpenPaperPosition,
         r#"
-        SELECT id, pool_address, venue, opened_at, entry_price, entry_active_bin,
-               lower_bin, upper_bin, size_usd, size_per_bin
-        FROM paper_positions
-        WHERE closed_at IS NULL
-        ORDER BY opened_at
+        SELECT pp.id, pp.pool_address, pp.venue, pp.opened_at, pp.entry_price, pp.entry_active_bin,
+               pp.lower_bin, pp.upper_bin, pp.size_usd, pp.size_per_bin, d.bin_step
+        FROM paper_positions pp
+        JOIN dlmm_pool_params d ON d.pool_address = pp.pool_address
+        WHERE pp.closed_at IS NULL
+        ORDER BY pp.opened_at
         "#,
     )
     .fetch_all(pool)

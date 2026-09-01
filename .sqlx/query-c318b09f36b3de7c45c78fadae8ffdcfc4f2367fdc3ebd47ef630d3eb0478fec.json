@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO muted_pools (pool_address, chat_id, until)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (pool_address, chat_id) DO UPDATE SET until = EXCLUDED.until\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c318b09f36b3de7c45c78fadae8ffdcfc4f2367fdc3ebd47ef630d3eb0478fec"
+}

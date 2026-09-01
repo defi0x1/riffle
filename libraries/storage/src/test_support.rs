@@ -41,6 +41,10 @@ pub async fn reset_pool_fixture(pool: &PgPool, pool_address: &str) {
         "bin_states",
         "pool_snapshots",
         "dlmm_pool_state",
+        "muted_pools",
+        "pool_metrics_5m",
+        "indicators_5m",
+        "signals",
     ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE pool_address = $1"))
             .bind(pool_address)
