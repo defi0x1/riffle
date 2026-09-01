@@ -12,6 +12,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chrono::Utc;
 use rust_decimal::Decimal;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_transaction_status_client_types::TransactionConfirmationStatus;
@@ -21,7 +22,7 @@ use crate::dto::{
 };
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::{rpc_ext, tx_build, wallet_resolve};
+use crate::{rpc_ext, tx_build, tx_events, wallet_resolve};
 
 pub async fn submit(
     State(state): State<AppState>,
@@ -222,7 +223,7 @@ async fn check_and_settle(
             | Some(TransactionConfirmationStatus::Finalized)
     );
     if landed {
-        confirm_intent(state, intent, status.slot as i64).await?;
+        confirm_intent(state, intent, signature, status.slot as i64).await?;
         return Ok(Some((TxStatus::Confirmed, None)));
     }
 
@@ -236,17 +237,79 @@ fn decimal_from_raw(raw: Option<u64>, decimals: Option<u8>) -> Option<Decimal> {
     ))
 }
 
-/// Records the confirmed intent's position and cash-flow ledger row. See the report on this
-/// task for what is and is not derived here: `open`'s position address, entry active bin and
-/// bin range come from a live re-read of the now-confirmed accounts; `add`'s deposited amounts
-/// come from the original request (exact, since the caller specified them); `remove` and
-/// `claim`'s actual withdrawn/collected amounts are not derived at all -- doing so needs to
-/// decode the confirmed transaction's emitted DLMM events, which this pass does not implement --
-/// so those two record a correctly kinded, correctly positioned ledger row with amounts left
-/// null rather than an invented number.
+/// Fetches the just-confirmed transaction and decodes its DLMM events looking for one matching
+/// `position`, via `select` (one of `tx_events::{add_liquidity_amounts, remove_liquidity_amounts,
+/// claim_fee_amounts}`). `None` on any failure along the way -- an RPC fetch that errors or
+/// returns nothing, or a transaction with no decodable event for this position -- each logged
+/// with its own reason here, since the caller's only recourse either way is to leave the amount
+/// null rather than invent one (item 5: a wrong number in a profit ledger is worse than a
+/// missing one, because nobody can tell it is wrong).
+async fn recover_event_amounts(
+    state: &AppState,
+    signature: &Signature,
+    position: &Pubkey,
+    action_label: &'static str,
+    select: fn(&[dlmm_decode::DecodedEvent], &Pubkey) -> Option<tx_events::RecoveredAmounts>,
+) -> Option<tx_events::RecoveredAmounts> {
+    let tx = match tx_events::fetch_transaction(&state.rpc, signature).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!(
+                error = ?e, %signature, action = action_label,
+                "Fetching confirmed transaction to recover its amounts failed"
+            );
+            return None;
+        }
+    };
+
+    let events = tx_events::decode_dlmm_events(&tx);
+    let recovered = select(&events, position);
+    if recovered.is_none() {
+        tracing::error!(
+            %signature, %position, action = action_label,
+            "Confirmed transaction carried no decodable DLMM event for this position"
+        );
+    }
+    recovered
+}
+
+/// Applies a recovered on-chain amount pair to a cash-flow row in progress, scaling by the
+/// intent's cached token decimals the same way the request-derived path already does.
+fn apply_recovered_amounts(
+    cf: &mut storage::write::ConfirmedCashFlow,
+    recovered: tx_events::RecoveredAmounts,
+    token_x_decimals: Option<u8>,
+    token_y_decimals: Option<u8>,
+) {
+    cf.amount_x_raw = Some(Decimal::from(recovered.amount_x_raw));
+    cf.amount_y_raw = Some(Decimal::from(recovered.amount_y_raw));
+    cf.amount_x = decimal_from_raw(Some(recovered.amount_x_raw), token_x_decimals);
+    cf.amount_y = decimal_from_raw(Some(recovered.amount_y_raw), token_y_decimals);
+}
+
+/// The `positionAddress` an add/remove/claim intent's own original request carries, parsed --
+/// or `None` when it is missing or unparsable, which callers treat exactly like a failed
+/// recovery (there is nothing to look an event up against).
+fn requested_position(params: &IntentParams) -> Option<Pubkey> {
+    let address = params
+        .request
+        .get("positionAddress")
+        .and_then(|v| v.as_str())?;
+    tx_build::parse_pubkey(address, "positionAddress").ok()
+}
+
+/// Records the confirmed intent's position and cash-flow ledger row. `open`'s position address,
+/// entry active bin and bin range come from a live re-read of the now-confirmed accounts.
+/// `add`, `remove` and `claim` all attempt to recover their real amounts by decoding the
+/// confirmed transaction's own DLMM events (see `recover_event_amounts` and `tx_events`); `add`
+/// falls back to the originally requested amounts if that recovery fails (a strategy deposit's
+/// request is a real, if possibly imprecise, number -- unlike remove/claim, which have no
+/// analogous fallback and simply leave their amounts null), and `remove`/`claim` leave their
+/// amounts null on a failed recovery, exactly as before this pass, rather than guess.
 async fn confirm_intent(
     state: &AppState,
     intent: &storage::write::TransactionIntentRow,
+    signature: &Signature,
     slot: i64,
 ) -> Result<(), ApiError> {
     use storage::types::{cash_flow_kind, intent_action};
@@ -318,40 +381,117 @@ async fn confirm_intent(
                 None,
             )
         } else if intent.action == intent_action::ADD {
-            let amount_x_raw = params
+            // Requested amounts, from the intent's own original request -- the fallback when
+            // event recovery below finds nothing, since a strategy deposit's request is a real
+            // number the caller chose, just not necessarily what the bins actually accepted.
+            let requested_amount_x_raw = params
                 .request
                 .get("amountXRaw")
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<u64>().ok());
-            let amount_y_raw = params
+            let requested_amount_y_raw = params
                 .request
                 .get("amountYRaw")
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<u64>().ok());
+
             let mut cf = empty_cash_flow(cash_flow_kind::DEPOSIT);
-            cf.amount_x_raw = amount_x_raw.map(Decimal::from);
-            cf.amount_y_raw = amount_y_raw.map(Decimal::from);
-            cf.amount_x = decimal_from_raw(amount_x_raw, params.token_x_decimals);
-            cf.amount_y = decimal_from_raw(amount_y_raw, params.token_y_decimals);
+            match requested_position(&params) {
+                Some(position) => {
+                    match recover_event_amounts(
+                        state,
+                        signature,
+                        &position,
+                        "add",
+                        tx_events::add_liquidity_amounts,
+                    )
+                    .await
+                    {
+                        Some(recovered) => apply_recovered_amounts(
+                            &mut cf,
+                            recovered,
+                            params.token_x_decimals,
+                            params.token_y_decimals,
+                        ),
+                        None => {
+                            cf.amount_x_raw = requested_amount_x_raw.map(Decimal::from);
+                            cf.amount_y_raw = requested_amount_y_raw.map(Decimal::from);
+                            cf.amount_x =
+                                decimal_from_raw(requested_amount_x_raw, params.token_x_decimals);
+                            cf.amount_y =
+                                decimal_from_raw(requested_amount_y_raw, params.token_y_decimals);
+                        }
+                    }
+                }
+                None => {
+                    tracing::error!(
+                        intent_id = %intent.id,
+                        "Add intent has no usable positionAddress in its stored request, \
+                         falling back to requested amounts"
+                    );
+                    cf.amount_x_raw = requested_amount_x_raw.map(Decimal::from);
+                    cf.amount_y_raw = requested_amount_y_raw.map(Decimal::from);
+                    cf.amount_x = decimal_from_raw(requested_amount_x_raw, params.token_x_decimals);
+                    cf.amount_y = decimal_from_raw(requested_amount_y_raw, params.token_y_decimals);
+                }
+            }
             (None, None, None, None, cf, None)
         } else if intent.action == intent_action::REMOVE {
-            (
-                None,
-                None,
-                None,
-                None,
-                empty_cash_flow(cash_flow_kind::WITHDRAWAL),
-                None,
-            )
+            let mut cf = empty_cash_flow(cash_flow_kind::WITHDRAWAL);
+            match requested_position(&params) {
+                Some(position) => {
+                    if let Some(recovered) = recover_event_amounts(
+                        state,
+                        signature,
+                        &position,
+                        "remove",
+                        tx_events::remove_liquidity_amounts,
+                    )
+                    .await
+                    {
+                        apply_recovered_amounts(
+                            &mut cf,
+                            recovered,
+                            params.token_x_decimals,
+                            params.token_y_decimals,
+                        );
+                    }
+                }
+                None => tracing::error!(
+                    intent_id = %intent.id,
+                    "Remove intent has no usable positionAddress in its stored request, \
+                     amounts stay null"
+                ),
+            }
+            (None, None, None, None, cf, None)
         } else if intent.action == intent_action::CLAIM {
-            (
-                None,
-                None,
-                None,
-                None,
-                empty_cash_flow(cash_flow_kind::FEE_CLAIM),
-                None,
-            )
+            let mut cf = empty_cash_flow(cash_flow_kind::FEE_CLAIM);
+            match requested_position(&params) {
+                Some(position) => {
+                    if let Some(recovered) = recover_event_amounts(
+                        state,
+                        signature,
+                        &position,
+                        "claim",
+                        tx_events::claim_fee_amounts,
+                    )
+                    .await
+                    {
+                        apply_recovered_amounts(
+                            &mut cf,
+                            recovered,
+                            params.token_x_decimals,
+                            params.token_y_decimals,
+                        );
+                    }
+                }
+                None => tracing::error!(
+                    intent_id = %intent.id,
+                    "Claim intent has no usable positionAddress in its stored request, \
+                     amounts stay null"
+                ),
+            }
+            (None, None, None, None, cf, None)
         } else {
             (
                 None,
@@ -381,4 +521,252 @@ async fn confirm_intent(
     .map_err(ApiError::Internal)?;
 
     Ok(())
+}
+
+#[cfg(all(test, feature = "db-tests"))]
+mod tests {
+    use super::*;
+    use crate::dto::{
+        BuildTxResponse, RemoveLiquidityRequest, RemoveLiquiditySummary, SimulationDto, TxSummary,
+    };
+    use crate::test_support::{test_pool, test_state};
+    use sqlx::PgPool;
+    use storage::types::{cash_flow_kind, intent_action, venue};
+    use storage::write::{
+        ConfirmTransactionIntent, ConfirmedCashFlow, NewPool, NewTransactionIntent, NewWallet,
+        confirm_transaction_intent, create_transaction_intent, mark_intent_submitted,
+        register_wallet, upsert_pool,
+    };
+    use uuid::Uuid;
+
+    async fn seed_wallet_and_pool(db: &PgPool, wallet: &str, pool_address: &str) {
+        register_wallet(
+            db,
+            &NewWallet {
+                pubkey: wallet.to_string(),
+                telegram_user_id: 909_090,
+                label: None,
+                registered_at: Utc::now(),
+            },
+        )
+        .await
+        .unwrap();
+
+        upsert_pool(
+            db,
+            &NewPool {
+                pool_address: pool_address.to_string(),
+                venue: venue::DLMM,
+                token_x: "tokenXsubmittest1111111111111111111111111".to_string(),
+                token_y: "tokenYsubmittest1111111111111111111111111".to_string(),
+                base_fee_bps: Decimal::new(100, 0),
+                protocol_share_bps: 500,
+                tvl_usd: None,
+                status: 0,
+                creator: None,
+                activation_point: None,
+                created_at: Utc::now(),
+                first_liquidity_at: None,
+                is_blacklisted: false,
+                launchpad: None,
+                tags: vec![],
+                updated_at: Utc::now(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Confirms a synthetic `open` intent directly against storage -- the shortest path to a
+    /// real `positions` row for a `remove`/`claim` test to reference, without going through a
+    /// live RPC-backed build-tx handler.
+    async fn seed_open_position(db: &PgPool, wallet: &str, pool_address: &str) -> Uuid {
+        let open_id = Uuid::new_v4();
+        create_transaction_intent(
+            db,
+            &NewTransactionIntent {
+                id: open_id,
+                wallet_address: wallet.to_string(),
+                position_id: None,
+                pool_address: pool_address.to_string(),
+                venue: venue::DLMM,
+                action: intent_action::OPEN,
+                idempotency_key: format!("open-for-{open_id}"),
+                unsigned_tx_base64: "dW5zaWduZWQ=".to_string(),
+                params: None,
+                created_at: Utc::now(),
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+        mark_intent_submitted(db, open_id, &format!("sig-open-{open_id}"), Utc::now())
+            .await
+            .unwrap();
+
+        confirm_transaction_intent(
+            db,
+            &ConfirmTransactionIntent {
+                intent_id: open_id,
+                confirmed_at: Utc::now(),
+                slot: 1,
+                position_address: Some(format!("position-{open_id}")),
+                entry_active_bin: Some(0),
+                lower_bin: Some(-10),
+                upper_bin: Some(10),
+                cash_flow: ConfirmedCashFlow {
+                    kind: cash_flow_kind::DEPOSIT,
+                    ts: Utc::now(),
+                    amount_x_raw: Some(Decimal::ZERO),
+                    amount_y_raw: Some(Decimal::ZERO),
+                    amount_x: Some(Decimal::ZERO),
+                    amount_y: Some(Decimal::ZERO),
+                    price_x_usd: None,
+                    price_y_usd: None,
+                    value_usd: None,
+                    bin_liquidity: None,
+                },
+                close_reason: None,
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    // Exercises `confirm_intent`'s `remove` path end to end against a real database, but with
+    // `state.rpc` pointed nowhere reachable (`test_state`'s deliberate choice) -- so event
+    // recovery is guaranteed to fail, exactly like a real RPC outage would. Proves two things
+    // this task cares about at once: the amount columns stay null rather than guessed (item 5),
+    // and calling `confirm_intent` twice for the same intent -- the same thing a retried
+    // `getSignatureStatuses` poll racing itself would do -- never produces a second cash-flow
+    // row (item 4), relying entirely on `confirm_transaction_intent`'s own idempotency rather
+    // than any check-then-act guard added here.
+    #[tokio::test]
+    async fn test_confirm_intent_remove_is_idempotent_and_leaves_amounts_null_on_unreachable_rpc() {
+        // Every identifier below is derived from one fresh UUID rather than a fixed literal:
+        // this test runs against a real, persistent database (not a per-test transaction that
+        // rolls back), so a rerun must not collide with a previous run's rows on a unique
+        // constraint (wallet pubkey, idempotency key, or signature) or silently resolve to
+        // them via `create_transaction_intent`'s own idempotent-upsert behaviour.
+        let run_id = Uuid::new_v4();
+        let db = test_pool().await;
+        let state = test_state(db.clone());
+        let wallet = format!("wallet_confirm_remove_idem_{run_id}");
+        let pool_address = format!("pool_confirm_remove_idem_{run_id}");
+        seed_wallet_and_pool(&db, &wallet, &pool_address).await;
+        let position_id = seed_open_position(&db, &wallet, &pool_address).await;
+        let position_address = sqlx::query_scalar!(
+            "SELECT position_address FROM positions WHERE id = $1",
+            position_id
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap();
+
+        let request = RemoveLiquidityRequest {
+            pool_address: pool_address.clone(),
+            position_address: position_address.clone(),
+            from_bin_id: -10,
+            to_bin_id: 10,
+            bps_to_remove: 10_000,
+            idempotency_key: format!("remove-idem-{run_id}"),
+        };
+        let response = BuildTxResponse {
+            unsigned_transaction: "dW5zaWduZWQ=".to_string(),
+            expiry_blockhash: "11111111111111111111111111111111111111111".to_string(),
+            expiry_last_valid_block_height: 1,
+            idempotency_key: request.idempotency_key.clone(),
+            simulation: SimulationDto {
+                success: true,
+                error: None,
+                logs_tail: vec![],
+            },
+            estimated_network_fee_lamports: "5000".to_string(),
+            summary: TxSummary::RemoveLiquidity(RemoveLiquiditySummary {
+                pool_address: pool_address.to_string(),
+                position_address: request.position_address.clone(),
+                position_lower_bin_id: -10,
+                position_upper_bin_id: 10,
+                token_x_mint: "So11111111111111111111111111111111111111112".to_string(),
+                token_y_mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+                token_x_program: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+                token_y_program: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+                from_bin_id: -10,
+                to_bin_id: 10,
+                bps_to_remove: 10_000,
+            }),
+        };
+        let params = IntentParams {
+            request: serde_json::to_value(&request).unwrap(),
+            token_x_decimals: Some(9),
+            token_y_decimals: Some(6),
+            response,
+        };
+
+        let remove_id = Uuid::new_v4();
+        create_transaction_intent(
+            &db,
+            &NewTransactionIntent {
+                id: remove_id,
+                wallet_address: wallet.to_string(),
+                position_id: Some(position_id),
+                pool_address: pool_address.to_string(),
+                venue: venue::DLMM,
+                action: intent_action::REMOVE,
+                idempotency_key: request.idempotency_key.clone(),
+                unsigned_tx_base64: "dW5zaWduZWQ=".to_string(),
+                params: Some(serde_json::to_value(&params).unwrap()),
+                created_at: Utc::now(),
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // A signature derived from `run_id` rather than a fixed placeholder, for the same
+        // cross-run-collision reason as the identifiers above -- `signature` is UNIQUE too.
+        let signature_bytes: Vec<u8> = run_id.as_bytes().iter().cycle().take(64).copied().collect();
+        let signature = Signature::try_from(signature_bytes.as_slice()).unwrap();
+        mark_intent_submitted(&db, remove_id, &signature.to_string(), Utc::now())
+            .await
+            .unwrap();
+        let intent = storage::queries::intent_by_signature(&db, &signature.to_string())
+            .await
+            .unwrap()
+            .expect("intent was just created");
+
+        confirm_intent(&state, &intent, &signature, 42)
+            .await
+            .expect("first confirmation");
+        confirm_intent(&state, &intent, &signature, 42)
+            .await
+            .expect("second confirmation must be a harmless no-op");
+
+        let row = sqlx::query!(
+            "SELECT amount_x_raw, amount_y_raw FROM position_cash_flows \
+             WHERE transaction_intent_id = $1",
+            remove_id
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert!(
+            row.amount_x_raw.is_none() && row.amount_y_raw.is_none(),
+            "amounts must stay null when the confirmed transaction cannot be fetched, not be \
+             guessed"
+        );
+
+        let count = sqlx::query_scalar!(
+            "SELECT count(*) FROM position_cash_flows WHERE transaction_intent_id = $1",
+            remove_id
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(
+            count,
+            Some(1),
+            "re-confirming must not double the cash-flow row"
+        );
+    }
 }
