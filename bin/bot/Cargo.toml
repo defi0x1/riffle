@@ -4,7 +4,18 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+common = { workspace = true }
 logger = { workspace = true }
+metrics = { workspace = true }
+storage = { workspace = true }
 clap = { workspace = true }
 eyre = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+sqlx = { workspace = true }
+chrono = { workspace = true }
+humantime = { workspace = true }
+teloxide = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }

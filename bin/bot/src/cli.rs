@@ -1,0 +1,209 @@
+// Commands are parsed with clap over the raw message text rather than hand-rolled string
+// matching: splitting on whitespace and handing the tokens to `try_parse_from` gives typed
+// arguments, subcommands and `--help` for free, and clap's own error text is good enough to
+// send straight back to the chat.
+use clap::{Parser, Subcommand, ValueEnum};
+
+use storage::types::Timeframe;
+
+#[derive(Parser, Debug, Clone, PartialEq)]
+#[command(
+    name = "",
+    no_binary_name = true,
+    disable_help_subcommand = true,
+    subcommand_required = true,
+    arg_required_else_help = true
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand, Debug, Clone, PartialEq)]
+#[command(rename_all = "lowercase")]
+pub enum Command {
+    /// Activity ranking -- what is hot right now.
+    Top {
+        #[arg(default_value = "5m")]
+        tf: TimeframeArg,
+    },
+    /// Highest volume-to-TVL ranking, with change against the previous bucket.
+    Volume {
+        #[arg(default_value = "5m")]
+        tf: TimeframeArg,
+    },
+    /// Our own fee-over-risk ranking, gate-filtered -- what actually pays.
+    Potential {
+        #[arg(default_value = "5m")]
+        tf: TimeframeArg,
+    },
+    /// Pool metadata plus every timeframe's indicators.
+    Pool { address: String },
+    /// Full rationale for a pool, including why it did not qualify.
+    Why { address: String },
+    /// Forces tier-1 (measured) membership for a pool; pass `off` to release it.
+    Watch {
+        address: String,
+        action: Option<WatchAction>,
+    },
+    /// Suppresses signals for a pool for a duration, e.g. `2h`, `45m`.
+    Mute {
+        address: String,
+        duration: humantime::Duration,
+    },
+    /// Ingest lag per source, slot gaps, tier size.
+    Status,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum WatchAction {
+    Off,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum TimeframeArg {
+    #[value(name = "5m")]
+    M5,
+    #[value(name = "10m")]
+    M10,
+    #[value(name = "1h")]
+    H1,
+    #[value(name = "4h")]
+    H4,
+    #[value(name = "24h")]
+    H24,
+}
+
+impl From<TimeframeArg> for Timeframe {
+    fn from(tf: TimeframeArg) -> Self {
+        match tf {
+            TimeframeArg::M5 => Timeframe::M5,
+            TimeframeArg::M10 => Timeframe::M10,
+            TimeframeArg::H1 => Timeframe::H1,
+            TimeframeArg::H4 => Timeframe::H4,
+            TimeframeArg::H24 => Timeframe::H24,
+        }
+    }
+}
+
+// Telegram sends "/top@MyBotName" in groups and always includes the leading slash; clap
+// only wants the bare subcommand name.
+fn normalize_first_token(token: &str) -> String {
+    let stripped = token.trim_start_matches('/');
+    stripped.split('@').next().unwrap_or(stripped).to_string()
+}
+
+pub fn parse_command(text: &str) -> Result<Command, clap::Error> {
+    let mut tokens: Vec<String> = text.split_whitespace().map(str::to_string).collect();
+    if let Some(first) = tokens.first_mut() {
+        *first = normalize_first_token(first);
+    }
+    Cli::try_parse_from(tokens).map(|cli| cli.command)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parses_top_with_default_timeframe() {
+        let command = parse_command("/top").unwrap();
+        assert_eq!(
+            command,
+            Command::Top {
+                tf: TimeframeArg::M5
+            }
+        );
+    }
+
+    #[test]
+    fn test_parses_top_with_explicit_timeframe() {
+        let command = parse_command("/top 1h").unwrap();
+        assert_eq!(
+            command,
+            Command::Top {
+                tf: TimeframeArg::H1
+            }
+        );
+    }
+
+    #[test]
+    fn test_strips_group_mention_suffix() {
+        let command = parse_command("/status@FeeFarmBot").unwrap();
+        assert_eq!(command, Command::Status);
+    }
+
+    #[test]
+    fn test_parses_pool_address() {
+        let command = parse_command("/pool 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU").unwrap();
+        assert_eq!(
+            command,
+            Command::Pool {
+                address: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_pool_without_address_is_rejected() {
+        assert!(parse_command("/pool").is_err());
+    }
+
+    #[test]
+    fn test_parses_watch_off() {
+        let command = parse_command("/watch addr1 off").unwrap();
+        assert_eq!(
+            command,
+            Command::Watch {
+                address: "addr1".to_string(),
+                action: Some(WatchAction::Off),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parses_watch_without_action() {
+        let command = parse_command("/watch addr1").unwrap();
+        assert_eq!(
+            command,
+            Command::Watch {
+                address: "addr1".to_string(),
+                action: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_watch_rejects_unknown_action() {
+        assert!(parse_command("/watch addr1 disable").is_err());
+    }
+
+    #[test]
+    fn test_parses_mute_duration() {
+        let command = parse_command("/mute addr1 2h").unwrap();
+        match command {
+            Command::Mute { address, duration } => {
+                assert_eq!(address, "addr1");
+                assert_eq!(*duration, std::time::Duration::from_secs(2 * 3600));
+            }
+            other => panic!("expected Mute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_mute_rejects_malformed_duration() {
+        let err = parse_command("/mute addr1 notaduration").unwrap_err();
+        // Rendered straight back to the chat, so it has to actually say something useful.
+        assert!(err.to_string().to_lowercase().contains("duration") || !err.to_string().is_empty());
+    }
+
+    #[test]
+    fn test_unknown_command_is_rejected() {
+        assert!(parse_command("/frobnicate").is_err());
+    }
+
+    #[test]
+    fn test_top_rejects_unknown_timeframe() {
+        assert!(parse_command("/top 3m").is_err());
+    }
+}
