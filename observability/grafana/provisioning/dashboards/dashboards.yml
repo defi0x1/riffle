@@ -1,0 +1,14 @@
+# Points Grafana at the dashboard JSON files so they load on startup without a manual
+# import.
+apiVersion: 1
+
+providers:
+  - name: fee-farming
+    orgId: 1
+    folder: fee-farming
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards

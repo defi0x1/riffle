@@ -1,0 +1,31 @@
+# Auto-provisioned data sources. Loaded once on Grafana startup; edits here take effect on
+# the next container restart.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  # Pool tier, rollup freshness and signal counts live in Postgres, not Prometheus -- the
+  # indicator/signal/rollup workers write straight to Timescale and export nothing to
+  # /metrics. Querying the same database the indexer and scorer use is the honest way to
+  # show that data rather than inventing a Prometheus metric that does not exist.
+  - name: Timescale
+    uid: timescale
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: ${POSTGRES_DB}
+    user: ${POSTGRES_USER}
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+    editable: false

@@ -1,0 +1,31 @@
+# Local scrape config for the fee-farming binaries. Every binary runs on the host, not in
+# compose, so targets use host.docker.internal (wired up as an extra_host on the prometheus
+# service in compose.yaml) rather than a compose service name.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # The indexer is the only process on the ingestion path, and ingestion lag is the signal
+  # that needs to be caught quickly -- scrape it much more often than the others.
+  - job_name: indexer
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["host.docker.internal:9101"]
+
+  # Scorer builds rollups and paper-position marks on multi-minute ticks (see
+  # tick.rollup_interval / tick.paper_position_mark_interval in scorer.example.yaml); a
+  # 30s scrape is already far finer than anything it produces.
+  - job_name: scorer
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["host.docker.internal:9102"]
+
+  - job_name: bot
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["host.docker.internal:9103"]

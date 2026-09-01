@@ -9,7 +9,8 @@ postgres:
   url: ${DATABASE_URL}
 
 metrics:
-  listen_addr: 0.0.0.0:9102
+  # Always binds 0.0.0.0:<metrics_port> -- there is no separate bind-address override.
+  metrics_port: 9102
 
 # Worker tick intervals.
 tick:

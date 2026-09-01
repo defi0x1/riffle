@@ -22,7 +22,8 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     # binaries run on the host, not in compose; this lets the container reach them
     extra_hosts:
@@ -36,10 +37,25 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      # Local-use only: dashboards load without a login prompt. Anonymous sessions get
+      # Viewer, not Editor -- changes still have to go through the admin login or the
+      # provisioning files.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # Read by the Timescale datasource provisioning file (observability/grafana/
+      # provisioning/datasources/datasources.yml) so it can point at the same database
+      # and credentials as the postgres service without duplicating them.
+      POSTGRES_DB: ${POSTGRES_DB:-feefarm}
+      POSTGRES_USER: ${POSTGRES_USER:-feefarm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-feefarm}
     volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
+      - postgres
 
 volumes:
   pgdata:

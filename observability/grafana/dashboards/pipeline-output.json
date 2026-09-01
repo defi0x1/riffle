@@ -1,0 +1,134 @@
+{
+  "uid": "scorer-pipeline-output",
+  "title": "Pipeline output",
+  "description": "What the scoring pipeline is actually producing: pool tiering, rollup freshness and signals emitted. Queried straight from Timescale, since none of this is exported to Prometheus.",
+  "tags": ["fee-farming", "scorer"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Coverage notes",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "This dashboard reads Postgres/Timescale directly (pools, pool_metrics_5m/10m, signals) rather than Prometheus, because the scorer does not export any of this as metrics yet. Indicator computation timing is left out entirely: nothing in the schema or the metrics registry records how long an indicator pass takes, so there is no real data to show for it. Adding that would mean a duration histogram registered in libraries/metrics and timed calls around the indicator worker."
+      }
+    },
+    {
+      "id": 2,
+      "type": "bargauge",
+      "title": "Pools by tier",
+      "description": "pools.tier: 0 = universe (screened only), 1 = watched (bin state subscribed).",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 3 },
+      "datasource": { "type": "postgres", "uid": "timescale" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT CASE tier WHEN 0 THEN 'universe (tier 0)' WHEN 1 THEN 'watched (tier 1)' ELSE tier::text END AS tier, count(*) AS pools FROM pools GROUP BY tier ORDER BY tier;",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "displayMode": "gradient", "orientation": "horizontal" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Seconds since last 5m rollup bucket",
+      "description": "How stale pool_metrics_5m is. The rollup worker writes a bucket every 5 minutes; a value climbing well past that means the rollup tick has stopped running.",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 3 },
+      "datasource": { "type": "postgres", "uid": "timescale" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT extract(epoch FROM (now() - max(bucket_start)))::bigint AS seconds_since_last_bucket FROM pool_metrics_5m;",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "no rows yet",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 900 }, { "color": "red", "value": 1800 }] }
+        }
+      },
+      "options": { "textMode": "value", "colorMode": "background" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Seconds since last 10m rollup bucket",
+      "description": "How stale pool_metrics_10m is. Written every 10 minutes for tier-1 pools (rolled up) and tier-0 pools (native resolution).",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 3 },
+      "datasource": { "type": "postgres", "uid": "timescale" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT extract(epoch FROM (now() - max(bucket.bucket_start)))::bigint AS seconds_since_last_bucket FROM pool_metrics_10m bucket;",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "no rows yet",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1800 }, { "color": "red", "value": 3600 }] }
+        }
+      },
+      "options": { "textMode": "value", "colorMode": "background" }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Signals emitted (last 24h)",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 7 },
+      "datasource": { "type": "postgres", "uid": "timescale" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS signals FROM signals WHERE ts > now() - interval '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Pools with an indicator row (last 1h)",
+      "description": "Distinct pools with at least one indicators_5m row in the last hour -- a cross-check that the indicator worker is producing output, independent of timing.",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 7 },
+      "datasource": { "type": "postgres", "uid": "timescale" },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT pool_address) AS pools FROM indicators_5m WHERE bucket_start > now() - interval '1 hour';",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Signals emitted by kind",
+      "description": "signals.kind over time (POTENTIAL / DEGRADING / GATE_FAIL / INFO), bucketed in 15-minute windows.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 11 },
+      "datasource": { "type": "postgres", "uid": "timescale" },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('15 minutes', ts) AS \"time\", kind, count(*) AS signals FROM signals WHERE $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ]
+}

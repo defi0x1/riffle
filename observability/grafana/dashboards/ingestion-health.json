@@ -1,0 +1,178 @@
+{
+  "uid": "indexer-ingestion-health",
+  "title": "Ingestion health",
+  "description": "Indexer ingestion path: lag, decode failures, stream stability and whether the process is actually making progress.",
+  "tags": ["fee-farming", "indexer"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-3h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Coverage notes",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "All panels on this dashboard read metrics the indexer actually registers (`libraries/metrics/src/ingest.rs`). Two signals are not covered because nothing exports them yet: database write latency (`ingest_health.write_latency_ms` is always written as NULL) and rows-written throughput (kept in-process on `Progress` but never registered as a Prometheus counter). The slot-advance panel below is the closest available proxy for throughput."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Indexer up",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "up{job=\"indexer\"}", "legendFormat": "up", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "options": { "textMode": "value", "colorMode": "background" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Wedged (up, no slot progress in 10m+)",
+      "description": "up{job=\"indexer\"} == 1 and changes(processing_slot[10m]) == 0. This is the case a plain health check cannot see: the process answers scrapes while a worker has hung.",
+      "gridPos": { "h": 4, "w": 6, "x": 4, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "up{job=\"indexer\"} == 1 and changes(processing_slot[10m]) == 0",
+          "legendFormat": "wedged",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "mappings": [
+            { "type": "special", "options": { "match": "null", "result": { "text": "no", "color": "green" } } },
+            { "type": "value", "options": { "1": { "text": "YES", "color": "red" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      },
+      "options": { "textMode": "value", "colorMode": "background" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Decode errors (last 1h)",
+      "gridPos": { "h": 4, "w": 4, "x": 10, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(increase(decode_error_total[1h]))", "legendFormat": "decode errors", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 50 }] } } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Stream reconnects (last 1h)",
+      "description": "Geyser backend only -- always zero on the RPC backend.",
+      "gridPos": { "h": 4, "w": 4, "x": 14, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(increase(stream_reconnect_total[1h]))", "legendFormat": "reconnects", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 }] } } }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Ingest lag (slots), current",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "ingest_lag_slots", "legendFormat": "{{instance}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 750 }, { "color": "red", "value": 3000 }] } } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Ingest lag (slots)",
+      "description": "ingest_lag_slots -- wall-clock staleness of the last write, converted to an approximate slot count. Also stands in for the slot-gap figure written to ingest_health.slot_gap.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "ingest_lag_slots", "legendFormat": "{{instance}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Processing slot / slot advance rate",
+      "description": "processing_slot (raw gauge, left axis) and deriv(processing_slot[5m]) (slots per second, right axis) -- the closest available proxy for ingestion throughput since rows-written is not exported. A flat processing_slot line while the process is up is the wedged-process case.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "processing_slot", "legendFormat": "processing_slot {{instance}}", "refId": "A" },
+        { "expr": "deriv(processing_slot[5m])", "legendFormat": "slots/sec {{instance}}", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Decode failure rate by event type",
+      "description": "rate(decode_error_total[5m]) by event_type.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (event_type) (rate(decode_error_total[5m]))", "legendFormat": "{{event_type}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Stream reconnects",
+      "description": "increase(stream_reconnect_total[5m]) -- geyser backend only.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "increase(stream_reconnect_total[5m])", "legendFormat": "{{instance}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "RPC call rate by method and status",
+      "description": "sum by (method, status) (rate(rpc_call_total[5m])) -- rpc source backend only.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (method, status) (rate(rpc_call_total[5m]))", "legendFormat": "{{method}} {{status}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "RPC call duration (p50 / p95 / p99)",
+      "description": "histogram_quantile over rpc_call_duration_secs -- rpc source backend only.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, method) (rate(rpc_call_duration_secs_bucket[5m])))", "legendFormat": "p50 {{method}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le, method) (rate(rpc_call_duration_secs_bucket[5m])))", "legendFormat": "p95 {{method}}", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le, method) (rate(rpc_call_duration_secs_bucket[5m])))", "legendFormat": "p99 {{method}}", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ]
+}

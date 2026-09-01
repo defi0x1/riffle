@@ -1,0 +1,96 @@
+# Alerting rules for the ingestion path. Scoped to what the indexer actually exports today
+# (see libraries/metrics/src/ingest.rs) -- no rule here references a metric that isn't
+# really registered and scraped.
+#
+# Two signals the indexer's own health worker tracks -- database write latency and
+# rows-written throughput -- are not wired up as Prometheus metrics yet (write_latency_ms
+# is always written as NULL, and rows_written_total is only kept in-process). There is
+# deliberately no "write latency degrading" rule below because there is nothing for it to
+# read; see the observability delivery notes for what would need to change to add one.
+
+groups:
+  - name: indexer-ingestion
+    rules:
+      - alert: IndexerDown
+        expr: up{job="indexer"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Indexer metrics endpoint is not responding"
+          description: >
+            Prometheus has not been able to scrape the indexer on {{ $labels.instance }}
+            for 2 minutes. Check whether the process is still running (it may have panicked
+            or been killed) and check the most recent log lines before it went quiet.
+
+      - alert: IndexerWedgedNoProgress
+        expr: up{job="indexer"} == 1 and changes(processing_slot[10m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Indexer is up but processing_slot has not moved"
+          description: >
+            The indexer's metrics endpoint is answering scrapes, so a plain liveness check
+            would call this healthy, but processing_slot has not changed in at least 15
+            minutes. This is the wedged-process case: a worker task has hung or deadlocked
+            (stream stopped reading, a database write is stuck, a lock is held forever)
+            while the process itself and its HTTP server keep running. Restart the indexer
+            and check the last log lines from each worker (state, event, discovery, tier)
+            to see which one stopped mid-tick.
+
+      - alert: IndexerIngestLagGrowing
+        expr: ingest_lag_slots > 750
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Indexer is falling behind the chain tip"
+          description: >
+            ingest_lag_slots has been above 750 slots (roughly 5 minutes behind, at 0.4s a
+            slot) for 5 minutes on {{ $labels.instance }}. Check RPC/Geyser call latency and
+            error rates and confirm the source backend is still reachable; a source that has
+            silently stopped delivering updates will show as lag that only grows.
+
+      - alert: IndexerIngestLagCritical
+        expr: ingest_lag_slots > 3000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Indexer is badly behind the chain tip"
+          description: >
+            ingest_lag_slots has been above 3000 slots (roughly 20 minutes behind) for 5
+            minutes on {{ $labels.instance }}. Treat this as an active incident: state and
+            event data being written now is stale enough to affect tiering and scoring
+            decisions downstream. Restart the source connection or the process if RPC/Geyser
+            health looks fine but lag keeps climbing.
+
+      - alert: IndexerStreamReconnectingRepeatedly
+        expr: increase(stream_reconnect_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Geyser stream is reconnecting repeatedly"
+          description: >
+            stream_reconnect_total has increased by more than 5 in the last 15 minutes on
+            {{ $labels.instance }} (geyser backend only). A single reconnect is normal; a
+            steady stream of them points at an unstable endpoint or an auth/token problem
+            upstream. Check the Geyser endpoint's own status and the token's expiry before
+            assuming it is a local network issue.
+
+      - alert: IndexerDecodeFailureRateRising
+        expr: sum by (instance, event_type) (rate(decode_error_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Decode failure rate is elevated for {{ $labels.event_type }}"
+          description: >
+            decode_error_total for event_type={{ $labels.event_type }} has been increasing
+            at more than roughly 6 failures a minute, sustained for 10 minutes, on
+            {{ $labels.instance }}. This usually means an on-chain account or event layout
+            changed and the decoder in dlmm_decode no longer matches it, or a specific pool
+            is producing state the decoder was not built to handle. Check the paired error
+            logs (they carry the pool address) before rolling anything back.
