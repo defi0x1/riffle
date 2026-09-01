@@ -1,25 +1,34 @@
 // Turns a parsed Command into a rendered message. This is the only module that calls into
 // `storage`, and it never issues SQL of its own -- every function here is a query or write
-// function that already exists in that crate, composed and formatted.
+// function that already exists in that crate, composed and formatted. The one exception is
+// `dlmm_math::bin_price`/`bin_resolvable`, pure computation over an already-fetched bin step,
+// not a new data source.
 //
-// Fund-moving commands (add/remove/claim/close) never build, sign or submit anything -- there
-// is no signing-capable type anywhere in this crate, by design (see the workspace's keyless
-// guard script). What they do is: check the caller actually owns the position they named,
-// apply the same risk gate /potential applies before letting exposure grow, render exactly what
-// is proposed, and hand back a button that deep-links into the Mini App, where the unsigned
-// transaction is actually built, reviewed and signed. `DispatchOutcome` is the vehicle for that
-// button riding alongside the rendered text back to `worker`.
+// Fund-moving commands (open/add/remove/claim/close) never build, sign or submit anything --
+// there is no signing-capable type anywhere in this crate, by design (see the workspace's
+// keyless guard script). What they do is: check the caller actually owns the position they
+// named (or, for `open`, that they have a wallet to open one with at all), apply the same risk
+// gate /potential applies before letting exposure grow, render exactly what is proposed, and
+// hand back a button that deep-links into the Mini App, where the unsigned transaction is
+// actually built, reviewed and signed. `DispatchOutcome` is the vehicle for that button riding
+// alongside the rendered text back to `worker`. None of these commands write a
+// transaction_intent from here either -- that row, and the idempotency it enforces on a
+// double-tapped button, is created once by the Mini App's own backend when the button is
+// actually tapped, keyed on an idempotency value the Mini App generates then. This crate's part
+// of "the same idempotency handling" is simply: always route through the same deep-link
+// mechanism, never a bespoke one.
 use std::collections::HashSet;
 
 use chrono::Utc;
+use dlmm_math::{bin_price, bin_resolvable};
 use eyre::WrapErr;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use storage::queries::{
     CashFlowRow, PoolRanking, PositionRow, PotentialPoolFilters, VolumeRanking, WalletRow,
-    active_wallets_for_user, cash_flows_for_position, ingest_health, latest_config,
-    latest_position_valuation, latest_wallet_balances, muted_pool_addresses,
+    active_wallets_for_user, cash_flows_for_position, ingest_health, latest_active_bin_snapshot,
+    latest_config, latest_position_valuation, latest_wallet_balances, muted_pool_addresses,
     open_positions_for_wallet, pool_detail, position_by_address, potential_pools, rationale_for,
     top_pools, volume_ranked_pools, watch_set,
 };
@@ -122,6 +131,7 @@ pub async fn dispatch(
             .await
             .map(DispatchOutcome::text),
 
+        Command::Open { address, width } => open(pool, ctx, &address, width).await,
         Command::Add {
             position,
             amount_x,
@@ -532,6 +542,123 @@ fn miniapp_outcome(
     url.query_pairs_mut()
         .append_pair("startapp", &format!("{action}_{position_address}"));
     DispatchOutcome::with_button(body, label, url)
+}
+
+// There is no existing position to ride in the deep link the way the other four commands do
+// (see `miniapp_outcome`) -- the position for `open` does not exist until the Mini App
+// generates it on the user's device and the button gets tapped. The pool address plus the
+// exact range this chat proposed is everything the Mini App needs to rebuild that same
+// proposal and mint a fresh position for it. Worst case for the 64 `[A-Za-z0-9_-]` character
+// cap Telegram enforces on `startapp` -- a 44-char base58 pool address, a 7-digit signed lower
+// bin, a 2-digit width, three separating underscores plus the "open" tag -- comes to under 60.
+fn miniapp_open_outcome(
+    ctx: &Context,
+    body: String,
+    pool_address: &str,
+    lower_bin_id: i32,
+    width: i32,
+) -> DispatchOutcome {
+    let mut url = ctx.miniapp_base_url.clone();
+    url.query_pairs_mut().append_pair(
+        "startapp",
+        &format!("open_{pool_address}_{lower_bin_id}_{width}"),
+    );
+    DispatchOutcome::with_button(body, "Open position", url)
+}
+
+async fn open(
+    pool: &PgPool,
+    ctx: &Context,
+    pool_address: &str,
+    width: u8,
+) -> eyre::Result<DispatchOutcome> {
+    let Some(telegram_user_id) = ctx.telegram_user_id else {
+        return Ok(DispatchOutcome::text(render::render_needs_telegram_user()));
+    };
+
+    // Opening always needs somewhere to open into. There is no position yet to infer a wallet
+    // from (unlike add/remove/claim/close), so this checks registration directly instead --
+    // the Mini App resolves exactly which registered wallet is "the" one for this device, the
+    // same way it already does for every other build-tx request.
+    let wallets = active_wallets_for_user(pool, telegram_user_id)
+        .await
+        .wrap_err_with(|| "Loading registered wallets")?;
+    if wallets.is_empty() {
+        return Ok(DispatchOutcome::text(render::render_no_wallets_registered()));
+    }
+
+    let Some(detail) = pool_detail(pool, pool_address)
+        .await
+        .wrap_err_with(|| format!("Loading pool detail for {pool_address}"))?
+    else {
+        return Ok(DispatchOutcome::text(render::render_not_found(
+            pool_address,
+        )));
+    };
+
+    // The same gate /add applies before letting exposure grow in a pool -- opening a brand
+    // new position is at least as consequential as adding to one that already cleared it, so
+    // it cannot be the easier of the two paths into the same pool.
+    let signal = rationale_for(pool, pool_address, Utc::now())
+        .await
+        .wrap_err_with(|| format!("Loading rationale for {pool_address}"))?;
+    if signal.as_ref().map(|s| s.kind.as_str()) != Some(SIGNAL_KIND_POTENTIAL) {
+        return Ok(DispatchOutcome::text(render::render_add_refused_gate(
+            pool_address,
+            signal.as_ref(),
+        )));
+    }
+
+    // Centered on the most recently observed active bin -- the only place this bot has one on
+    // record (see `latest_active_bin_snapshot`'s own doc comment). Without at least one
+    // snapshot there is nothing honest to center a range on, so this refuses rather than
+    // guessing a placement.
+    let Some(active) = latest_active_bin_snapshot(pool, pool_address)
+        .await
+        .wrap_err_with(|| format!("Loading latest active bin for {pool_address}"))?
+    else {
+        return Ok(DispatchOutcome::text(render::render_open_no_active_bin(
+            pool_address,
+        )));
+    };
+
+    let width = i32::from(width);
+    // Integer-divide the width around the active bin; a width above 1 that is even leans one
+    // extra bin below the active bin rather than above it, an arbitrary but fixed tie-break.
+    // `lower <= upper` always holds by construction -- there are no two independently supplied
+    // bin ids here for a caller to invert.
+    let lower_bin_id = active.bin_id - (width - 1) / 2;
+    let upper_bin_id = lower_bin_id + width - 1;
+
+    // The builder itself only rejects width outside 1..=70 (already enforced at parse time);
+    // this checks the range is inside what the pool's own bin step can represent at all,
+    // which `width` alone cannot guarantee if the active bin sits near the edge of that
+    // envelope.
+    let bin_step_bps = detail.pool.bin_step as u16;
+    if !bin_resolvable(lower_bin_id, bin_step_bps) || !bin_resolvable(upper_bin_id, bin_step_bps) {
+        return Ok(DispatchOutcome::text(
+            render::render_open_bin_range_invalid(pool_address, lower_bin_id, upper_bin_id),
+        ));
+    }
+
+    let price_lower = bin_price(lower_bin_id, bin_step_bps).ok();
+    let price_upper = bin_price(upper_bin_id, bin_step_bps).ok();
+
+    let body = render::render_open_proposal(
+        &detail.pool,
+        lower_bin_id,
+        upper_bin_id,
+        width,
+        price_lower,
+        price_upper,
+    );
+    Ok(miniapp_open_outcome(
+        ctx,
+        body,
+        pool_address,
+        lower_bin_id,
+        width,
+    ))
 }
 
 async fn add(

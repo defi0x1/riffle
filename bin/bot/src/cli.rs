@@ -68,6 +68,16 @@ pub enum Command {
     /// Deposits-vs-withdrawals-plus-current-value for one of your positions.
     Profit { position: String },
 
+    /// Proposes opening a new position in a pool, sized by bin width and centered on the
+    /// pool's most recently observed active bin -- a width plus the pool address is
+    /// everything a row from /potential already gives you, so there is no bin id to copy by
+    /// hand. Reviewed and signed in the Mini App; the position's own keypair is generated on
+    /// your device there, this chat never sees it.
+    Open {
+        address: String,
+        #[arg(value_parser = clap::value_parser!(u8).range(1..=70))]
+        width: u8,
+    },
     /// Proposes adding liquidity to one of your positions. Reviewed and signed in the Mini
     /// App -- this chat only ever describes the proposal, it never moves funds itself.
     Add {
@@ -293,6 +303,50 @@ mod tests {
     #[test]
     fn test_profit_requires_a_position_address() {
         assert!(parse_command("/profit").is_err());
+    }
+
+    #[test]
+    fn test_parses_open_with_pool_and_width() {
+        let command = parse_command("/open pool1 20").unwrap();
+        assert_eq!(
+            command,
+            Command::Open {
+                address: "pool1".to_string(),
+                width: 20,
+            }
+        );
+    }
+
+    #[test]
+    fn test_open_rejects_missing_width() {
+        assert!(parse_command("/open pool1").is_err());
+    }
+
+    #[test]
+    fn test_open_rejects_a_non_numeric_width() {
+        assert!(parse_command("/open pool1 wide").is_err());
+    }
+
+    #[test]
+    fn test_open_rejects_zero_width() {
+        assert!(parse_command("/open pool1 0").is_err());
+    }
+
+    #[test]
+    fn test_open_rejects_width_over_seventy() {
+        assert!(parse_command("/open pool1 71").is_err());
+    }
+
+    #[test]
+    fn test_open_accepts_the_maximum_width() {
+        let command = parse_command("/open pool1 70").unwrap();
+        assert_eq!(
+            command,
+            Command::Open {
+                address: "pool1".to_string(),
+                width: 70,
+            }
+        );
     }
 
     #[test]

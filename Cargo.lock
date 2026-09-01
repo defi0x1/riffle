@@ -700,6 +700,7 @@ dependencies = [
  "chrono",
  "clap",
  "common",
+ "dlmm_math",
  "eyre",
  "futures",
  "humantime",

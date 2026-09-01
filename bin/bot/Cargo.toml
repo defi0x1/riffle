@@ -8,6 +8,11 @@ common = { workspace = true }
 logger = { workspace = true }
 metrics = { workspace = true }
 storage = { workspace = true }
+# Only for bin_price/bin_resolvable, to turn a proposed /open bin range into what it means in
+# price terms and to check it is one this pool's bin step can actually represent -- this crate
+# never builds or signs a transaction (see the keyless guard), so nothing else from the DLMM
+# math or transaction-building crates belongs here.
+dlmm_math = { workspace = true }
 clap = { workspace = true }
 eyre = { workspace = true }
 tokio = { workspace = true }

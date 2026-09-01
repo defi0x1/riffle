@@ -8,8 +8,9 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use storage::queries::{
-    IngestHealthStatus, LatestConfig, PoolDetail, PoolRanking, PositionRow, PositionValuationRow,
-    RationaleItem, SignalWithRationale, VolumeRanking, WalletBalanceRow, WalletRow,
+    IngestHealthStatus, LatestConfig, PoolDetail, PoolRanking, PoolSummary, PositionRow,
+    PositionValuationRow, RationaleItem, SignalWithRationale, VolumeRanking, WalletBalanceRow,
+    WalletRow,
 };
 use storage::types::{Timeframe, quality, tier};
 use storage::write::{IndicatorRow, RegisterWalletOutcome};
@@ -594,6 +595,72 @@ pub fn render_position_closed(address: &str) -> String {
     )
 }
 
+pub fn render_open_no_active_bin(pool_address: &str) -> String {
+    format!(
+        "{} {} {}",
+        plain("no active-bin reading on record yet for"),
+        code(pool_address),
+        plain(
+            "-- opening a position needs to know where to center the range, and none has \
+             arrived from ingestion yet. Try again shortly, or check the pool with /pool \
+             first.",
+        ),
+    )
+}
+
+pub fn render_open_bin_range_invalid(
+    pool_address: &str,
+    lower_bin_id: i32,
+    upper_bin_id: i32,
+) -> String {
+    format!(
+        "{}\n{}\n{}",
+        bold("refused -- bin range is not valid for this pool"),
+        code(pool_address),
+        plain(&format!(
+            "the range [{lower_bin_id}, {upper_bin_id}] falls outside what this pool's bin \
+             step can price -- try a narrower width."
+        )),
+    )
+}
+
+// `price_lower`/`price_upper` are `None` only in the (practically unreachable, since the
+// caller already checked `bin_resolvable` on both ends) case that the price ladder itself
+// overflows for one of them -- `fmt_f64` renders that honestly as "n/a" rather than a zero.
+pub fn render_open_proposal(
+    pool: &PoolSummary,
+    lower_bin_id: i32,
+    upper_bin_id: i32,
+    width: i32,
+    price_lower: Option<f64>,
+    price_upper: Option<f64>,
+) -> String {
+    let mut out = format!(
+        "{}\n{}\n{}\n",
+        bold("Open position"),
+        pair(&pool.token_x, &pool.token_y),
+        code(&pool.pool_address),
+    );
+    out.push_str(&format!(
+        "bin range {} (width {})\n",
+        code(&format!("{lower_bin_id} - {upper_bin_id}")),
+        code(&width.to_string()),
+    ));
+    out.push_str(&format!(
+        "price range {} - {} {}\n",
+        code(&fmt_f64(price_lower, 6)),
+        code(&fmt_f64(price_upper, 6)),
+        plain("(token_y per token_x, raw pool units -- not decimal-adjusted or priced in USD)"),
+    ));
+    out.push_str(&format!("strategy {}\n\n", code("SpotBalanced")));
+    out.push_str(&plain(
+        "a new position account will be created for this range -- signing this opens it \
+         empty; deposit into it afterward with /add.\n\n",
+    ));
+    out.push_str(&miniapp_notice());
+    out
+}
+
 pub fn render_profit(
     position: &PositionRow,
     pair: Option<(&str, &str)>,
@@ -799,6 +866,28 @@ mod tests {
         assert!(out.contains("\\(breakeven 1\\.0\\)"));
     }
 
+    fn sample_pool_summary() -> PoolSummary {
+        PoolSummary {
+            pool_address: "pool_addr_1".to_string(),
+            venue: storage::types::venue::DLMM,
+            token_x: "SOL".to_string(),
+            token_y: "USDC".to_string(),
+            base_fee_bps: Decimal::new(20, 0),
+            protocol_share_bps: 500,
+            tvl_usd: Some(Decimal::new(100_000, 0)),
+            status: 0,
+            tier: storage::types::tier::WATCHED,
+            tier_changed_at: Some(Utc::now()),
+            created_at: Utc::now(),
+            first_liquidity_at: Some(Utc::now()),
+            is_blacklisted: false,
+            launchpad: None,
+            bin_step: 25,
+            base_factor: 10_000,
+            collect_fee_mode: 0,
+        }
+    }
+
     fn sample_position() -> PositionRow {
         PositionRow {
             id: uuid::Uuid::nil(),
@@ -823,6 +912,52 @@ mod tests {
         assert!(out.to_lowercase().contains("private key or seed phrase"));
         assert!(out.to_lowercase().contains("not stored or logged"));
         assert!(out.to_lowercase().contains("compromised"));
+    }
+
+    #[test]
+    fn test_render_open_proposal_states_pool_range_price_strategy_and_the_miniapp_step() {
+        let out = render_open_proposal(
+            &sample_pool_summary(),
+            -35,
+            34,
+            70,
+            Some(0.991_270_84),
+            Some(1.008_781_97),
+        );
+        assert!(out.contains("pool_addr_1"));
+        assert!(out.contains("SOL"));
+        assert!(out.contains("USDC"));
+        assert!(out.contains("-35"));
+        assert!(out.contains("34"));
+        assert!(out.contains("70"));
+        assert!(out.contains("0.991271"));
+        assert!(out.contains("1.008782"));
+        assert!(out.contains("SpotBalanced"));
+        assert!(out.to_lowercase().contains("new position account"));
+        assert!(out.to_lowercase().contains("mini app"));
+        assert!(out.to_lowercase().contains("cannot sign"));
+    }
+
+    #[test]
+    fn test_render_open_proposal_reports_an_unpriceable_end_as_not_available() {
+        let out = render_open_proposal(&sample_pool_summary(), -35, 34, 70, None, Some(1.0));
+        assert!(out.to_lowercase().contains("n/a"));
+    }
+
+    #[test]
+    fn test_render_open_no_active_bin_names_the_pool() {
+        let out = render_open_no_active_bin("pool_addr_1");
+        assert!(out.contains("pool_addr_1"));
+        assert!(out.to_lowercase().contains("no active"));
+        assert!(out.to_lowercase().contains("reading"));
+    }
+
+    #[test]
+    fn test_render_open_bin_range_invalid_states_both_bounds() {
+        let out = render_open_bin_range_invalid("pool_addr_1", -500_000, -499_930);
+        assert!(out.contains("-500000"));
+        assert!(out.contains("-499930"));
+        assert!(out.to_lowercase().contains("not valid"));
     }
 
     #[test]

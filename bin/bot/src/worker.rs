@@ -241,6 +241,10 @@ async fn register_commands(bot: &Bot) -> eyre::Result<()> {
         BotCommand::new("balance", "Latest token balances for a registered wallet"),
         BotCommand::new("positions", "Open positions for a registered wallet"),
         BotCommand::new("profit", "Profit for one of your positions"),
+        BotCommand::new(
+            "open",
+            "Propose opening a new position (signed in the Mini App)",
+        ),
         BotCommand::new("add", "Propose adding liquidity (signed in the Mini App)"),
         BotCommand::new(
             "remove",
