@@ -5,7 +5,7 @@ use eyre::WrapErr;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use tokio_util::sync::CancellationToken;
 
-use api::{ApiWorker, Args, AppState};
+use api::{ApiWorker, AppState, Args};
 
 // Wraps the metrics HTTP server as a Worker, matching bin/bot's own MetricsWorker exactly --
 // either it or the API server exiting brings the process down, the one lifecycle pattern every

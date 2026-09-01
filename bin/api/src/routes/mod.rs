@@ -26,8 +26,13 @@ async fn authenticate(headers: &HeaderMap, state: &AppState) -> Result<TelegramU
         .get(INIT_DATA_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    telegram_auth::verify_init_data(raw, &state.config.bot_token, state.config.init_data_max_age, Utc::now())
-        .map_err(|e| ApiError::Unauthorized(e.to_string()))
+    telegram_auth::verify_init_data(
+        raw,
+        &state.config.bot_token,
+        state.config.init_data_max_age,
+        Utc::now(),
+    )
+    .map_err(|e| ApiError::Unauthorized(e.to_string()))
 }
 
 pub fn router(state: AppState) -> Router {
@@ -35,7 +40,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/wallet/register", post(wallet::register))
         .route("/api/v1/wallet/balances", get(wallet::balances))
         .route("/api/v1/positions", get(positions::positions))
-        .route("/api/v1/positions/{position_address}/profit", get(positions::profit))
+        .route(
+            "/api/v1/positions/{position_address}/profit",
+            get(positions::profit),
+        )
         .route("/api/v1/tx/open-position", post(tx::open_position))
         .route("/api/v1/tx/add-liquidity", post(tx::add_liquidity))
         .route("/api/v1/tx/remove-liquidity", post(tx::remove_liquidity))

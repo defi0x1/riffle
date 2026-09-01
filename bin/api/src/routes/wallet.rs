@@ -33,10 +33,12 @@ pub async fn register(
     .map_err(ApiError::Internal)?;
 
     match outcome {
-        storage::write::RegisterWalletOutcome::OwnedByAnotherUser { .. } => Err(ApiError::conflict(
-            "wallet_owned_by_other",
-            "This wallet is already registered to a different Telegram account",
-        )),
+        storage::write::RegisterWalletOutcome::OwnedByAnotherUser { .. } => {
+            Err(ApiError::conflict(
+                "wallet_owned_by_other",
+                "This wallet is already registered to a different Telegram account",
+            ))
+        }
         storage::write::RegisterWalletOutcome::Registered
         | storage::write::RegisterWalletOutcome::AlreadyOwnedByCaller => {
             let wallets = storage::queries::active_wallets_for_user(&state.db, user.id)

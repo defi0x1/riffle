@@ -16,7 +16,9 @@ use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_transaction_status_client_types::TransactionConfirmationStatus;
 
-use crate::dto::{IntentParams, SubmitTxRequest, SubmitTxResponse, TxStatus, TxStatusQuery, TxStatusResponse};
+use crate::dto::{
+    IntentParams, SubmitTxRequest, SubmitTxResponse, TxStatus, TxStatusQuery, TxStatusResponse,
+};
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::{rpc_ext, tx_build, wallet_resolve};
@@ -33,8 +35,9 @@ pub async fn submit(
     let bytes = BASE64_STANDARD
         .decode(&req.signed_transaction)
         .map_err(|_| ApiError::BadRequest("signedTransaction is not valid base64".to_string()))?;
-    let tx: VersionedTransaction = bincode::deserialize(&bytes)
-        .map_err(|_| ApiError::BadRequest("signedTransaction is not a valid transaction".to_string()))?;
+    let tx: VersionedTransaction = bincode::deserialize(&bytes).map_err(|_| {
+        ApiError::BadRequest("signedTransaction is not a valid transaction".to_string())
+    })?;
 
     if tx.signatures.is_empty() || tx.signatures[0] == Signature::default() {
         return Err(ApiError::BadRequest(
@@ -128,7 +131,12 @@ pub async fn status(
     let intent = storage::queries::intent_by_signature(&state.db, &query.signature)
         .await
         .map_err(ApiError::Internal)?
-        .ok_or_else(|| ApiError::NotFound(format!("No transaction found for signature {}", query.signature)))?;
+        .ok_or_else(|| {
+            ApiError::NotFound(format!(
+                "No transaction found for signature {}",
+                query.signature
+            ))
+        })?;
     if intent.wallet_address != wallet.pubkey {
         return Err(ApiError::refused(
             "position_not_owned",
@@ -165,10 +173,9 @@ pub async fn status(
     // CREATED/SUBMITTED: this call is the "poll to confirmation" loop's continuation across
     // separate HTTP requests, past whatever POST /tx/submit itself managed to observe
     // synchronously.
-    let signature: Signature = query
-        .signature
-        .parse()
-        .map_err(|_| ApiError::BadRequest("signature is not a valid transaction signature".to_string()))?;
+    let signature: Signature = query.signature.parse().map_err(|_| {
+        ApiError::BadRequest("signature is not a valid transaction signature".to_string())
+    })?;
     match check_and_settle(&state, &intent, &signature).await? {
         Some((status, error)) => Ok(Json(TxStatusResponse {
             signature: query.signature,
@@ -211,7 +218,8 @@ async fn check_and_settle(
 
     let landed = matches!(
         status.confirmation_status,
-        Some(TransactionConfirmationStatus::Confirmed) | Some(TransactionConfirmationStatus::Finalized)
+        Some(TransactionConfirmationStatus::Confirmed)
+            | Some(TransactionConfirmationStatus::Finalized)
     );
     if landed {
         confirm_intent(state, intent, status.slot as i64).await?;
@@ -272,7 +280,9 @@ async fn confirm_intent(
                 .request
                 .get("ephemeralPositionPubkey")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::Internal(eyre::eyre!("open intent missing ephemeralPositionPubkey")))?;
+                .ok_or_else(|| {
+                    ApiError::Internal(eyre::eyre!("open intent missing ephemeralPositionPubkey"))
+                })?;
             let position_pubkey = tx_build::parse_pubkey(ephemeral, "ephemeralPositionPubkey")?;
             let live_position = rpc_ext::fetch_live_position(&state.rpc, &position_pubkey).await?;
             let (lower, upper) = match &live_position {
@@ -282,7 +292,8 @@ async fn confirm_intent(
             // Best-effort: the pool's *current* active bin, taken moments after confirmation --
             // not the exact bin at the confirmed slot, which would need historical state this
             // service does not read.
-            let entry_active_bin = match tx_build::parse_pubkey(&intent.pool_address, "poolAddress") {
+            let entry_active_bin = match tx_build::parse_pubkey(&intent.pool_address, "poolAddress")
+            {
                 Ok(lb_pair) => rpc_ext::fetch_live_pool(&state.rpc, &lb_pair)
                     .await
                     .ok()
@@ -298,7 +309,14 @@ async fn confirm_intent(
             cf.amount_y_raw = Some(Decimal::ZERO);
             cf.amount_x = Some(Decimal::ZERO);
             cf.amount_y = Some(Decimal::ZERO);
-            (Some(ephemeral.to_string()), entry_active_bin, lower, upper, cf, None)
+            (
+                Some(ephemeral.to_string()),
+                entry_active_bin,
+                lower,
+                upper,
+                cf,
+                None,
+            )
         } else if intent.action == intent_action::ADD {
             let amount_x_raw = params
                 .request
@@ -317,9 +335,23 @@ async fn confirm_intent(
             cf.amount_y = decimal_from_raw(amount_y_raw, params.token_y_decimals);
             (None, None, None, None, cf, None)
         } else if intent.action == intent_action::REMOVE {
-            (None, None, None, None, empty_cash_flow(cash_flow_kind::WITHDRAWAL), None)
+            (
+                None,
+                None,
+                None,
+                None,
+                empty_cash_flow(cash_flow_kind::WITHDRAWAL),
+                None,
+            )
         } else if intent.action == intent_action::CLAIM {
-            (None, None, None, None, empty_cash_flow(cash_flow_kind::FEE_CLAIM), None)
+            (
+                None,
+                None,
+                None,
+                None,
+                empty_cash_flow(cash_flow_kind::FEE_CLAIM),
+                None,
+            )
         } else {
             (
                 None,

@@ -64,13 +64,25 @@ mod tests {
     #[test]
     fn test_amount_x_over_cap_is_refused() {
         let err = check_amount_cap(1_000, 1_001, 0).unwrap_err();
-        assert!(matches!(err, ApiError::Refused { code: "amount_exceeds_cap", .. }));
+        assert!(matches!(
+            err,
+            ApiError::Refused {
+                code: "amount_exceeds_cap",
+                ..
+            }
+        ));
     }
 
     #[test]
     fn test_amount_y_over_cap_is_refused() {
         let err = check_amount_cap(1_000, 0, 1_001).unwrap_err();
-        assert!(matches!(err, ApiError::Refused { code: "amount_exceeds_cap", .. }));
+        assert!(matches!(
+            err,
+            ApiError::Refused {
+                code: "amount_exceeds_cap",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -135,7 +147,13 @@ mod db_tests {
         let err = pool_risk_gate(&state, "pool_risk_gate_unknown_1111111111111111")
             .await
             .unwrap_err();
-        assert!(matches!(err, ApiError::Refused { code: "unknown_pool", .. }));
+        assert!(matches!(
+            err,
+            ApiError::Refused {
+                code: "unknown_pool",
+                ..
+            }
+        ));
     }
 
     #[tokio::test]
@@ -146,7 +164,13 @@ mod db_tests {
         let state = test_state(pool);
 
         let err = pool_risk_gate(&state, pool_address).await.unwrap_err();
-        assert!(matches!(err, ApiError::Refused { code: "pool_not_watched", .. }));
+        assert!(matches!(
+            err,
+            ApiError::Refused {
+                code: "pool_not_watched",
+                ..
+            }
+        ));
     }
 
     #[tokio::test]
@@ -160,7 +184,13 @@ mod db_tests {
         let state = test_state(pool);
 
         let err = pool_risk_gate(&state, pool_address).await.unwrap_err();
-        assert!(matches!(err, ApiError::Refused { code: "pool_blacklisted", .. }));
+        assert!(matches!(
+            err,
+            ApiError::Refused {
+                code: "pool_blacklisted",
+                ..
+            }
+        ));
     }
 
     #[tokio::test]

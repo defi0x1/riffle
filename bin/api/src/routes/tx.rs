@@ -35,13 +35,14 @@ fn compute_budget_config(state: &AppState) -> dlmm_tx::ComputeBudgetConfig {
 }
 
 fn expires_at(state: &AppState) -> chrono::DateTime<Utc> {
-    let delta =
-        chrono::Duration::from_std(state.config.intent_expiry).unwrap_or(chrono::Duration::seconds(90));
+    let delta = chrono::Duration::from_std(state.config.intent_expiry)
+        .unwrap_or(chrono::Duration::seconds(90));
     Utc::now() + delta
 }
 
 fn to_json_value<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, ApiError> {
-    serde_json::to_value(value).map_err(|e| ApiError::Internal(eyre::eyre!("Serialising request: {e}")))
+    serde_json::to_value(value)
+        .map_err(|e| ApiError::Internal(eyre::eyre!("Serialising request: {e}")))
 }
 
 pub async fn open_position(
@@ -55,7 +56,8 @@ pub async fn open_position(
 
     risk::pool_risk_gate(&state, &req.pool_address).await?;
     let lb_pair = tx_build::parse_pubkey(&req.pool_address, "poolAddress")?;
-    let position_pubkey = tx_build::parse_pubkey(&req.ephemeral_position_pubkey, "ephemeralPositionPubkey")?;
+    let position_pubkey =
+        tx_build::parse_pubkey(&req.ephemeral_position_pubkey, "ephemeralPositionPubkey")?;
 
     let live_pool = rpc_ext::fetch_live_pool(&state.rpc, &lb_pair)
         .await?

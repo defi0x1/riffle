@@ -81,15 +81,17 @@ pub fn verify_init_data(
         .collect::<Vec<_>>()
         .join("\n");
 
-    // secret_key = HMAC-SHA256(key = "WebAppData", message = bot_token); the payload's own
-    // hash = HMAC-SHA256(key = secret_key, message = data_check_string).
-    let mut secret_mac =
+    // Telegram derives a per-bot MAC key from the bot token, then signs the check string with
+    // it: webapp_key = HMAC-SHA256(key = "WebAppData", message = bot_token), and the payload's
+    // own hash = HMAC-SHA256(key = webapp_key, message = data_check_string). This key
+    // authenticates Telegram's payload; it is unrelated to any on-chain signing material.
+    let mut webapp_mac =
         Hmac::<Sha256>::new_from_slice(b"WebAppData").expect("HMAC accepts a key of any length");
-    secret_mac.update(bot_token.as_bytes());
-    let secret_key = secret_mac.finalize().into_bytes();
+    webapp_mac.update(bot_token.as_bytes());
+    let webapp_key = webapp_mac.finalize().into_bytes();
 
     let mut mac =
-        Hmac::<Sha256>::new_from_slice(&secret_key).expect("HMAC accepts a key of any length");
+        Hmac::<Sha256>::new_from_slice(&webapp_key).expect("HMAC accepts a key of any length");
     mac.update(data_check_string.as_bytes());
     // `Mac::verify_slice` compares in constant time (via the digest crate's `CtOutput`,
     // itself built on `subtle::ConstantTimeEq`) -- deliberately not a manual byte-by-byte `==`.
@@ -105,7 +107,8 @@ pub fn verify_init_data(
     let auth_date =
         DateTime::<Utc>::from_timestamp(auth_date_secs, 0).ok_or(InitDataError::InvalidAuthDate)?;
 
-    let max_age = chrono::Duration::from_std(max_age).unwrap_or_else(|_| chrono::Duration::days(3650));
+    let max_age =
+        chrono::Duration::from_std(max_age).unwrap_or_else(|_| chrono::Duration::days(3650));
     // A small allowance for clock skew in the "payload claims to be from the future" direction
     // -- auth_date is set by Telegram's own servers, not the client, so it is not an
     // attacker-controlled value trying to buy more validity time.
@@ -156,11 +159,9 @@ mod tests {
     /// exercise the parser and the HMAC check independently of Telegram's own client.
     fn signed_init_data(user_id: i64, auth_date: i64) -> String {
         let user = format!(r#"{{"id":{user_id},"first_name":"Test"}}"#);
-        let user_encoded = percent_encoding::utf8_percent_encode(
-            &user,
-            percent_encoding::NON_ALPHANUMERIC,
-        )
-        .to_string();
+        let user_encoded =
+            percent_encoding::utf8_percent_encode(&user, percent_encoding::NON_ALPHANUMERIC)
+                .to_string();
 
         let mut pairs: BTreeMap<String, String> = BTreeMap::new();
         pairs.insert("auth_date".to_string(), auth_date.to_string());
@@ -173,17 +174,15 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let mut secret_mac = Hmac::<Sha256>::new_from_slice(b"WebAppData").unwrap();
-        secret_mac.update(BOT_TOKEN.as_bytes());
-        let secret_key = secret_mac.finalize().into_bytes();
+        let mut webapp_mac = Hmac::<Sha256>::new_from_slice(b"WebAppData").unwrap();
+        webapp_mac.update(BOT_TOKEN.as_bytes());
+        let webapp_key = webapp_mac.finalize().into_bytes();
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(&secret_key).unwrap();
+        let mut mac = Hmac::<Sha256>::new_from_slice(&webapp_key).unwrap();
         mac.update(data_check_string.as_bytes());
         let hash = hex_encode(&mac.finalize().into_bytes());
 
-        format!(
-            "auth_date={auth_date}&query_id=AAEmock&user={user_encoded}&hash={hash}"
-        )
+        format!("auth_date={auth_date}&query_id=AAEmock&user={user_encoded}&hash={hash}")
     }
 
     fn hex_encode(bytes: &[u8]) -> String {
@@ -220,9 +219,13 @@ mod tests {
     fn test_wrong_bot_token_is_rejected() {
         let now = Utc::now();
         let raw = signed_init_data(42, now.timestamp());
-        let err =
-            verify_init_data(&raw, "999999:not-the-right-token", Duration::from_secs(86_400), now)
-                .unwrap_err();
+        let err = verify_init_data(
+            &raw,
+            "999999:not-the-right-token",
+            Duration::from_secs(86_400),
+            now,
+        )
+        .unwrap_err();
         assert_eq!(err, InitDataError::HashMismatch);
     }
 
@@ -276,10 +279,10 @@ mod tests {
             .map(|(k, v)| format!("{k}={v}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let mut secret_mac = Hmac::<Sha256>::new_from_slice(b"WebAppData").unwrap();
-        secret_mac.update(BOT_TOKEN.as_bytes());
-        let secret_key = secret_mac.finalize().into_bytes();
-        let mut mac = Hmac::<Sha256>::new_from_slice(&secret_key).unwrap();
+        let mut webapp_mac = Hmac::<Sha256>::new_from_slice(b"WebAppData").unwrap();
+        webapp_mac.update(BOT_TOKEN.as_bytes());
+        let webapp_key = webapp_mac.finalize().into_bytes();
+        let mut mac = Hmac::<Sha256>::new_from_slice(&webapp_key).unwrap();
         mac.update(data_check_string.as_bytes());
         let hash = hex_encode(&mac.finalize().into_bytes());
         let raw = format!("auth_date={auth_date}&hash={hash}");

@@ -52,7 +52,10 @@ fn mint_program_and_decimals(account: &solana_sdk::account::Account) -> Option<(
 /// distinct from an RPC-level failure, which is surfaced as `ApiError::Internal` instead, since
 /// the risk gate (`risk.rs`) already established Postgres knows this pool, and a chain-side miss
 /// at that point is an inconsistency worth alerting on, not an ordinary user-facing refusal.
-pub async fn fetch_live_pool(rpc: &RpcClient, lb_pair: &Pubkey) -> Result<Option<LivePool>, ApiError> {
+pub async fn fetch_live_pool(
+    rpc: &RpcClient,
+    lb_pair: &Pubkey,
+) -> Result<Option<LivePool>, ApiError> {
     let account = match rpc.get_account(lb_pair).await {
         Ok(account) => account,
         Err(_) => return Ok(None),
@@ -69,11 +72,21 @@ pub async fn fetch_live_pool(rpc: &RpcClient, lb_pair: &Pubkey) -> Result<Option
     let (token_x_program, token_x_decimals) = mints[0]
         .as_ref()
         .and_then(mint_program_and_decimals)
-        .ok_or_else(|| ApiError::Internal(eyre::eyre!("Token X mint {} not found or unreadable", state.token_x_mint)))?;
+        .ok_or_else(|| {
+            ApiError::Internal(eyre::eyre!(
+                "Token X mint {} not found or unreadable",
+                state.token_x_mint
+            ))
+        })?;
     let (token_y_program, token_y_decimals) = mints[1]
         .as_ref()
         .and_then(mint_program_and_decimals)
-        .ok_or_else(|| ApiError::Internal(eyre::eyre!("Token Y mint {} not found or unreadable", state.token_y_mint)))?;
+        .ok_or_else(|| {
+            ApiError::Internal(eyre::eyre!(
+                "Token Y mint {} not found or unreadable",
+                state.token_y_mint
+            ))
+        })?;
 
     Ok(Some(LivePool {
         state,

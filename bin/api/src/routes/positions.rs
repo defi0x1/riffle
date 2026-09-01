@@ -26,17 +26,21 @@ pub async fn positions(
     let mut positions = Vec::with_capacity(rows.len());
     for row in rows {
         let fees = match tx_build::parse_pubkey(&row.position_address, "positionAddress") {
-            Ok(position_pubkey) => match rpc_ext::fetch_live_position(&state.rpc, &position_pubkey).await {
-                Ok(Some(live)) => rpc_ext::pending_fees_in_range(&live, row.lower_bin, row.upper_bin),
-                Ok(None) => {
-                    tracing::warn!(position = %row.position_address, "Position not found on chain while listing positions");
-                    (0, 0)
+            Ok(position_pubkey) => {
+                match rpc_ext::fetch_live_position(&state.rpc, &position_pubkey).await {
+                    Ok(Some(live)) => {
+                        rpc_ext::pending_fees_in_range(&live, row.lower_bin, row.upper_bin)
+                    }
+                    Ok(None) => {
+                        tracing::warn!(position = %row.position_address, "Position not found on chain while listing positions");
+                        (0, 0)
+                    }
+                    Err(e) => {
+                        tracing::warn!(position = %row.position_address, error = ?e, "Failed to read live position state");
+                        (0, 0)
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(position = %row.position_address, error = ?e, "Failed to read live position state");
-                    (0, 0)
-                }
-            },
+            }
             Err(_) => (0, 0),
         };
 

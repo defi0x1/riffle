@@ -1,6 +1,6 @@
 //! `api` is the HTTP service the Telegram Mini App talks to (see `miniapp/README.md`'s "HTTP
 //! contract expected from the backend"). It is keyless by construction: no type anywhere in this
-//! crate is a `Keypair` or implements `Signer`, and no function here ever produces a signature.
+//! crate can hold or derive signing material, and no function here ever produces a signature.
 //! It builds unsigned transactions via `dlmm_tx`, records their lifecycle in `transaction_intents`
 //! (all SQL for that lives in `libraries/storage`, never here), relays already-signed
 //! transactions to RPC, and serves balances, positions and profit reads.

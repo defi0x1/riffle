@@ -21,7 +21,8 @@ use crate::error::ApiError;
 use crate::state::AppState;
 
 pub fn parse_pubkey(s: &str, field: &str) -> Result<Pubkey, ApiError> {
-    Pubkey::from_str(s).map_err(|_| ApiError::BadRequest(format!("{field} is not a valid base58 pubkey")))
+    Pubkey::from_str(s)
+        .map_err(|_| ApiError::BadRequest(format!("{field} is not a valid base58 pubkey")))
 }
 
 pub fn parse_amount_raw(s: &str, field: &str) -> Result<u64, ApiError> {
@@ -112,11 +113,158 @@ pub async fn create_intent_idempotently(
 
     let cached: IntentParams = row
         .params
-        .ok_or_else(|| ApiError::Internal(eyre::eyre!("Transaction intent {} has no params", row.id)))
+        .ok_or_else(|| {
+            ApiError::Internal(eyre::eyre!("Transaction intent {} has no params", row.id))
+        })
         .and_then(|v| {
             serde_json::from_value(v)
                 .map_err(|e| ApiError::Internal(eyre::eyre!("Decoding cached intent params: {e}")))
         })?;
 
     Ok(cached.response)
+}
+
+#[cfg(all(test, feature = "db-tests"))]
+mod tests {
+    use chrono::Utc;
+    use rust_decimal::Decimal;
+
+    use super::*;
+    use crate::dto::{BuildTxResponse, ClosePositionSummary, SimulationDto, TxSummary};
+    use crate::test_support::{test_pool, test_state};
+
+    async fn ensure_wallet_and_pool(pool: &sqlx::PgPool, wallet: &str, pool_address: &str) {
+        storage::write::register_wallet(
+            pool,
+            &storage::write::NewWallet {
+                pubkey: wallet.to_string(),
+                telegram_user_id: (uuid::Uuid::new_v4().as_u128() % (i64::MAX as u128)) as i64,
+                label: None,
+                registered_at: Utc::now(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        storage::write::upsert_dlmm_pool(
+            pool,
+            &storage::write::NewPool {
+                pool_address: pool_address.to_string(),
+                venue: storage::types::venue::DLMM,
+                token_x: "So11111111111111111111111111111111111111112".to_string(),
+                token_y: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+                base_fee_bps: Decimal::new(100, 2),
+                protocol_share_bps: 500,
+                tvl_usd: None,
+                status: 0,
+                creator: None,
+                activation_point: None,
+                created_at: now,
+                first_liquidity_at: None,
+                is_blacklisted: false,
+                launchpad: None,
+                tags: vec![],
+                updated_at: now,
+            },
+            &storage::write::NewDlmmPoolParams {
+                pool_address: pool_address.to_string(),
+                bin_step: 20,
+                base_factor: 10_000,
+                filter_period: 30,
+                decay_period: 600,
+                reduction_factor: 5_000,
+                variable_fee_control: 40_000,
+                max_volatility_accumulator: 350_000,
+                collect_fee_mode: 0,
+                reward_mint_x: None,
+                reward_mint_y: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    fn sample_response(idempotency_key: &str, tag: &str) -> BuildTxResponse {
+        BuildTxResponse {
+            unsigned_transaction: format!("unsigned-{tag}"),
+            expiry_blockhash: "11111111111111111111111111111111111111111".to_string(),
+            expiry_last_valid_block_height: 100,
+            idempotency_key: idempotency_key.to_string(),
+            simulation: SimulationDto {
+                success: true,
+                error: None,
+                logs_tail: vec![],
+            },
+            estimated_network_fee_lamports: "5000".to_string(),
+            summary: TxSummary::ClosePosition(ClosePositionSummary {
+                position_address: "position_placeholder".to_string(),
+                rent_receiver: "rent_receiver_placeholder".to_string(),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_same_idempotency_key_returns_the_first_response_not_a_second_build() {
+        // Fresh identifiers per run: this crate has no delete/reset helper of its own (all SQL
+        // stays in libraries/storage), so a repeated run against a persistent test database
+        // must not collide with rows an earlier run left behind.
+        let wallet = format!("wallet_intent_idem_{}", uuid::Uuid::new_v4());
+        let pool_address = format!("pool_intent_idem_{}", uuid::Uuid::new_v4());
+        let idempotency_key = format!("idem-key-tx-build-test-{}", uuid::Uuid::new_v4());
+
+        let pool = test_pool().await;
+        ensure_wallet_and_pool(&pool, &wallet, &pool_address).await;
+        let state = test_state(pool);
+
+        let first = create_intent_idempotently(
+            &state,
+            IntentInsert {
+                wallet_address: wallet.clone(),
+                position_id: None,
+                pool_address: pool_address.clone(),
+                action: storage::types::intent_action::CLOSE,
+                idempotency_key: idempotency_key.clone(),
+                request_json: serde_json::json!({}),
+                token_x_decimals: None,
+                token_y_decimals: None,
+                response: sample_response(&idempotency_key, "first"),
+                expires_at: Utc::now() + chrono::Duration::seconds(90),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.unsigned_transaction, "unsigned-first");
+
+        // A second call under the same (wallet, idempotency_key) -- as a retried "build me the
+        // transaction" request would produce -- must resolve to the first build's bytes, never
+        // mint a second, different one.
+        let second = create_intent_idempotently(
+            &state,
+            IntentInsert {
+                wallet_address: wallet.clone(),
+                position_id: None,
+                pool_address: pool_address.clone(),
+                action: storage::types::intent_action::CLOSE,
+                idempotency_key: idempotency_key.clone(),
+                request_json: serde_json::json!({}),
+                token_x_decimals: None,
+                token_y_decimals: None,
+                response: sample_response(&idempotency_key, "second"),
+                expires_at: Utc::now() + chrono::Duration::seconds(90),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(second.unsigned_transaction, "unsigned-first");
+
+        // Reusing the storage layer's own read path rather than a raw COUNT query, matching
+        // this crate's "no SQL of its own" constraint even in tests: exactly one intent exists
+        // for this wallet, still pending (CREATED), so it appears exactly once here.
+        let pending = storage::queries::pending_intents_for_wallet(&state.db, &wallet)
+            .await
+            .unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].idempotency_key, idempotency_key);
+    }
 }
