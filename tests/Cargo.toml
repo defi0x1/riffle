@@ -1,0 +1,28 @@
+[package]
+name = "integration"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+storage = { workspace = true }
+engine = { workspace = true }
+dlmm_math = { workspace = true }
+# Not a workspace member dependency (only libraries/* are): the rollup worker's pure
+# aggregation function lives in this binary crate's lib target, and re-implementing it
+# here would test a copy of the logic rather than the logic itself.
+scorer = { path = "../bin/scorer" }
+
+sqlx = { workspace = true, features = ["uuid"] }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+eyre = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+uuid = { version = "1", features = ["v4", "serde"] }
