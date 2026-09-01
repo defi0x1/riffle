@@ -1359,6 +1359,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dlmm_tx"
+version = "0.1.0"
+dependencies = [
+ "borsh 1.8.1",
+ "dlmm_decode",
+ "eyre",
+ "serde_json",
+ "solana-sdk",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

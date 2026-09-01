@@ -14,6 +14,7 @@ metrics = { path = "libraries/metrics" }
 source = { path = "libraries/source" }
 dlmm_decode = { path = "libraries/dlmm_decode" }
 dlmm_math = { path = "libraries/dlmm_math" }
+dlmm_tx = { path = "libraries/dlmm_tx" }
 storage = { path = "libraries/storage" }
 engine = { path = "libraries/engine" }
 
