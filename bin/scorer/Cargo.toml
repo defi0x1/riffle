@@ -4,7 +4,25 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+common = { workspace = true }
+storage = { workspace = true }
+sqlx = { workspace = true }
+engine = { workspace = true }
+dlmm_math = { workspace = true }
 logger = { workspace = true }
+metrics = { workspace = true }
 clap = { workspace = true }
 eyre = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+humantime = { workspace = true }
+tracing = { workspace = true }
+# Not in [workspace.dependencies]: signals.id and paper_positions.id are UUID primary
+# keys and storage already pins this version directly for the same reason.
+uuid = { version = "1", features = ["v4"] }
