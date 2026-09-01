@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE transaction_intents\n        SET status = $3,\n            signature = COALESCE(signature, $2),\n            submitted_at = COALESCE(submitted_at, $4),\n            updated_at = $4\n        WHERE id = $1 AND status IN ($5, $3)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int2",
+        "Timestamptz",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8874e81fe3f55f44445f219df8ad919015c2ea4a11e080cfb5c61cfde7ca77ba"
+}

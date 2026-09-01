@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ts, price_x_usd, price_y_usd, amount_x, amount_y, fees_x_uncollected,\n               fees_y_uncollected, value_usd, hold_value_usd, in_range\n        FROM position_valuations\n        WHERE position_id = $1\n        ORDER BY ts DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "price_x_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "price_y_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "amount_x",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "amount_y",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "fees_x_uncollected",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "fees_y_uncollected",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "value_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "hold_value_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "in_range",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ad54577fe53b1e795622b036e7c2fbf6a294200b477858565833aa7414242c9e"
+}

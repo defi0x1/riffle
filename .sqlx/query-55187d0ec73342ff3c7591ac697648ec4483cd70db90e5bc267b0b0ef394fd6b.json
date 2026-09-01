@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT action, wallet_address, pool_address, venue, position_id, status\n        FROM transaction_intents WHERE id = $1 FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "action",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "wallet_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "position_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "55187d0ec73342ff3c7591ac697648ec4483cd70db90e5bc267b0b0ef394fd6b"
+}

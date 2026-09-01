@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT pubkey, label, registered_at\n        FROM wallets\n        WHERE telegram_user_id = $1 AND revoked_at IS NULL\n        ORDER BY registered_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pubkey",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "label",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "registered_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "60d55b48bb7e982e32c5361c3f0df0be960ec281f3f6327670e953ae55ee02ca"
+}

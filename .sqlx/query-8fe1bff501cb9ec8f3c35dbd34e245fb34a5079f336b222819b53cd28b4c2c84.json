@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT telegram_user_id FROM wallets WHERE pubkey = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "telegram_user_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8fe1bff501cb9ec8f3c35dbd34e245fb34a5079f336b222819b53cd28b4c2c84"
+}

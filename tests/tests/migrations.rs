@@ -28,6 +28,9 @@ const EXPECTED_HYPERTABLES: &[&str] = &[
     "indicators_24h",
     "position_marks",
     "ingest_health",
+    // Real-position counterparts of `position_marks`, and per-wallet token balances.
+    "position_valuations",
+    "wallet_balances",
 ];
 
 const EXPECTED_CONTINUOUS_AGGREGATES: &[&str] =
@@ -54,6 +57,8 @@ const EXPECTED_COMPRESSION_POLICIES: &[(&str, &str)] = &[
     ("indicators_24h", "30 days"),
     ("position_marks", "30 days"),
     ("ingest_health", "3 days"),
+    ("position_valuations", "30 days"),
+    ("wallet_balances", "7 days"),
 ];
 
 // (hypertable name, `drop_after`). Everything not listed here is kept indefinitely by
@@ -67,6 +72,9 @@ const EXPECTED_RETENTION_POLICIES: &[(&str, &str)] = &[
     ("pool_snapshots", "90 days"),
     ("dlmm_pool_state", "90 days"),
     ("ingest_health", "30 days"),
+    // Balances are a refreshable cache of on-chain state, so they age out; position
+    // valuations are the audit trail behind a profit figure and are deliberately kept.
+    ("wallet_balances", "90 days"),
 ];
 
 #[tokio::test]

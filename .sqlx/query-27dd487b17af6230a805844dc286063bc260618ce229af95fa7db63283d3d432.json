@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE positions\n            SET closed_at = COALESCE(closed_at, $2), close_reason = COALESCE(close_reason, $3)\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "27dd487b17af6230a805844dc286063bc260618ce229af95fa7db63283d3d432"
+}

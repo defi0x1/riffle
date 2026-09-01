@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO wallets (pubkey, telegram_user_id, label, registered_at)\n                VALUES ($1, $2, $3, $4)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3a4f93dadbdc3674fce3c2171646f3abdeb2058124d9f8f29f42911221ec433f"
+}

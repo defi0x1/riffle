@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT revoked_at FROM wallets WHERE pubkey = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a7f69e9afb33134c3241312e65d236d55c48b13385068a20b701ab90cbd496e9"
+}

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO wallet_balances (wallet_address, mint, ts, amount_raw, amount, price_usd, value_usd)\n        SELECT * FROM UNNEST(\n            $1::text[], $2::text[], $3::timestamptz[], $4::numeric[], $5::numeric[],\n            $6::numeric[], $7::numeric[]\n        )\n        ON CONFLICT (wallet_address, mint, ts) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray",
+        "TimestamptzArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e2d1888ce2c195ad731b26c29de4a269963765bd7066cdd0f38cf3bfee1ae773"
+}

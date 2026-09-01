@@ -58,3 +58,98 @@ pub async fn reset_pool_fixture(pool: &PgPool, pool_address: &str) {
             .unwrap_or_else(|e| panic!("clearing {table} for {pool_address}: {e}"));
     }
 }
+
+// Same reasoning as reset_pool_fixture, for the V2 wallet/position tables: a persistent test
+// database sees every previous run's rows, so a test asserting an absolute row count must clear
+// its own wallet's tree first. Deleted child-first to respect the FK chain
+// (position_cash_flows/position_valuations -> positions -> wallets, transaction_intents ->
+// wallets and -> positions).
+pub async fn reset_wallet_fixture(pool: &sqlx::PgPool, wallet_address: &str) {
+    sqlx::query(
+        "DELETE FROM position_cash_flows WHERE position_id IN \
+         (SELECT id FROM positions WHERE wallet_address = $1)",
+    )
+    .bind(wallet_address)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("clearing position_cash_flows for {wallet_address}: {e}"));
+
+    sqlx::query(
+        "DELETE FROM position_valuations WHERE position_id IN \
+         (SELECT id FROM positions WHERE wallet_address = $1)",
+    )
+    .bind(wallet_address)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("clearing position_valuations for {wallet_address}: {e}"));
+
+    sqlx::query("DELETE FROM transaction_intents WHERE wallet_address = $1")
+        .bind(wallet_address)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| panic!("clearing transaction_intents for {wallet_address}: {e}"));
+
+    sqlx::query("DELETE FROM positions WHERE wallet_address = $1")
+        .bind(wallet_address)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| panic!("clearing positions for {wallet_address}: {e}"));
+
+    sqlx::query("DELETE FROM wallet_balances WHERE wallet_address = $1")
+        .bind(wallet_address)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| panic!("clearing wallet_balances for {wallet_address}: {e}"));
+
+    sqlx::query("DELETE FROM wallets WHERE pubkey = $1")
+        .bind(wallet_address)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| panic!("clearing wallets for {wallet_address}: {e}"));
+}
+
+// Test-only helper for fixtures that need a pool row to satisfy positions/transaction_intents'
+// FK to pools, mirroring the `ensure_pool` helper duplicated across the existing write:: tests.
+pub async fn ensure_pool_fixture(pool: &sqlx::PgPool, pool_address: &str) {
+    use crate::write::{NewDlmmPoolParams, NewPool, upsert_dlmm_pool};
+    use chrono::Utc;
+    use rust_decimal::Decimal;
+
+    let now = Utc::now();
+    upsert_dlmm_pool(
+        pool,
+        &NewPool {
+            pool_address: pool_address.to_string(),
+            venue: crate::types::venue::DLMM,
+            token_x: "So11111111111111111111111111111111111111112".to_string(),
+            token_y: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string(),
+            base_fee_bps: Decimal::new(100, 2),
+            protocol_share_bps: 500,
+            tvl_usd: None,
+            status: 0,
+            creator: None,
+            activation_point: None,
+            created_at: now,
+            first_liquidity_at: None,
+            is_blacklisted: false,
+            launchpad: None,
+            tags: vec![],
+            updated_at: now,
+        },
+        &NewDlmmPoolParams {
+            pool_address: pool_address.to_string(),
+            bin_step: 20,
+            base_factor: 10_000,
+            filter_period: 30,
+            decay_period: 600,
+            reduction_factor: 5_000,
+            variable_fee_control: 40_000,
+            max_volatility_accumulator: 350_000,
+            collect_fee_mode: 0,
+            reward_mint_x: None,
+            reward_mint_y: None,
+        },
+    )
+    .await
+    .unwrap();
+}

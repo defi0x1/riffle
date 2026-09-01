@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE wallets SET label = $2, revoked_at = NULL WHERE pubkey = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7dcd3a568490648934acaee3e00b7dca305abf1f48c91ac6e3c97c8f5fa2edff"
+}

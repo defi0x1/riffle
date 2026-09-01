@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT transaction_intent_id, kind, ts, amount_x, amount_y, price_x_usd, price_y_usd, value_usd\n        FROM position_cash_flows\n        WHERE position_id = $1\n        ORDER BY ts\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_intent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "amount_x",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "amount_y",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "price_x_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_y_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "value_usd",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "5c4eb0f8ed85454d0e7b8d70d20412a1d0d13b31a7c911e0050f2a2ed567d133"
+}

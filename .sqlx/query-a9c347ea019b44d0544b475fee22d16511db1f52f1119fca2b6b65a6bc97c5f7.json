@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status, signature, submitted_at FROM transaction_intents WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "signature",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "submitted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "a9c347ea019b44d0544b475fee22d16511db1f52f1119fca2b6b65a6bc97c5f7"
+}

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO position_cash_flows (\n            transaction_intent_id, position_id, kind, ts, amount_x_raw, amount_y_raw,\n            amount_x, amount_y, price_x_usd, price_y_usd, value_usd, bin_liquidity\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n        ON CONFLICT (transaction_intent_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int2",
+        "Timestamptz",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b1536176fbbca0288b189964ec749c177b4b3527fdba32270869b8435a27b8c"
+}

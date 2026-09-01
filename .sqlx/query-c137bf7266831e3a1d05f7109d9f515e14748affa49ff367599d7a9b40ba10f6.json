@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, position_address, wallet_address, pool_address, venue, opened_at,\n               entry_active_bin, lower_bin, upper_bin, closed_at, close_reason\n        FROM positions\n        WHERE position_address = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "position_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "wallet_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 5,
+        "name": "opened_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "entry_active_bin",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "lower_bin",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "upper_bin",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "closed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "close_reason",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c137bf7266831e3a1d05f7109d9f515e14748affa49ff367599d7a9b40ba10f6"
+}

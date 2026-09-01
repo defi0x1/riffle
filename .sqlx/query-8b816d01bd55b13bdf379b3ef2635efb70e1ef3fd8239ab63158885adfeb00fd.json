@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (mint) mint, amount, price_usd, value_usd\n        FROM wallet_balances\n        WHERE wallet_address = $1\n        ORDER BY mint, ts DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mint",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "price_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "value_usd",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "8b816d01bd55b13bdf379b3ef2635efb70e1ef3fd8239ab63158885adfeb00fd"
+}

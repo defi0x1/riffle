@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM wallets WHERE pubkey = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c172280c8ce5ae55213e9ac7eab3a2e238e5e1c1fc7a4d514b39d51928c8001f"
+}

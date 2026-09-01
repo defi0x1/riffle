@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE wallets SET revoked_at = COALESCE(revoked_at, $2) WHERE pubkey = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4638905a11e1beead7dd819b7800097804bcde5b3fd1f9b97eb2a8f483c047eb"
+}

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE transaction_intents\n        SET status = CASE WHEN status = $3 THEN status ELSE $2 END,\n            failed_at = COALESCE(failed_at, $4),\n            failure_reason = COALESCE(failure_reason, $5),\n            updated_at = $4\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int2",
+        "Int2",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d552e02009d1ed0c970ade029a45488cc121091b1fb9367868675443365a0ef4"
+}

@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, wallet_address, position_id, pool_address, venue, action, idempotency_key,\n               status, unsigned_tx_base64, params, created_at, expires_at, signature\n        FROM transaction_intents\n        WHERE wallet_address = $1 AND status IN (0, 1)\n        ORDER BY created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "wallet_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "position_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 5,
+        "name": "action",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "idempotency_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "unsigned_tx_base64",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "params",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "signature",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "1fba43bf3a26d7c4b75b03b04935913632895a424b8ad2da8bb9a4f4caa8bed1"
+}
