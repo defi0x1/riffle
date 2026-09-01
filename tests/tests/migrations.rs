@@ -84,13 +84,22 @@ async fn test_migrations_apply_cleanly_and_the_schema_matches_the_catalog() {
         .await
         .expect("migrations must apply cleanly to an empty database");
 
+    // Counted from the directory rather than hard-coded, so adding a migration does not fail
+    // this test for the wrong reason. What is being asserted is that every file applied, not
+    // that there is some particular number of them.
+    let on_disk = std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../migrations"))
+        .expect("reading the migrations directory")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "sql"))
+        .count() as i64;
+
     let applied_after_first_run: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
         .fetch_one(&scratch)
         .await
         .expect("counting applied migrations");
     assert_eq!(
-        applied_after_first_run, 26,
-        "expected all 26 numbered migrations to have applied"
+        applied_after_first_run, on_disk,
+        "every numbered migration on disk must have applied"
     );
 
     // Applying twice must be safe: sqlx's migrator tracks what it already ran and is a

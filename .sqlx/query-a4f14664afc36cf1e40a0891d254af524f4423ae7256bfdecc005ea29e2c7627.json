@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH ranked AS (\n            SELECT\n                pool_address,\n                quote_value_usd,\n                row_number() OVER (PARTITION BY pool_address ORDER BY quote_value_usd) AS rn,\n                count(*) OVER (PARTITION BY pool_address) AS cnt\n            FROM active_bin_snapshots\n            WHERE pool_address = ANY($1) AND ts >= $2 AND ts < $3 AND quote_value_usd IS NOT NULL\n        )\n        SELECT\n            pool_address AS \"pool_address!\",\n            avg(quote_value_usd) AS median_quote_value_usd\n        FROM ranked\n        WHERE rn IN ((cnt + 1) / 2, (cnt + 2) / 2)\n        GROUP BY pool_address\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "median_quote_value_usd",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "a4f14664afc36cf1e40a0891d254af524f4423ae7256bfdecc005ea29e2c7627"
+}

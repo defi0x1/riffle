@@ -48,3 +48,6 @@ pub use volume_ranking::*;
 
 mod latest_config;
 pub use latest_config::*;
+
+mod signal_cooldown;
+pub use signal_cooldown::*;

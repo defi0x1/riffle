@@ -83,9 +83,14 @@ mod tests {
         crate::test_support::reset_pool_fixture(&pool, pool_address).await;
 
         let chat_id = -1001;
-        mute_pool(&pool, pool_address, chat_id, Utc::now() + chrono::Duration::hours(1))
-            .await
-            .unwrap();
+        mute_pool(
+            &pool,
+            pool_address,
+            chat_id,
+            Utc::now() + chrono::Duration::hours(1),
+        )
+        .await
+        .unwrap();
 
         let muted = muted_pool_addresses(&pool, chat_id).await.unwrap();
         assert!(muted.contains(&pool_address.to_string()));
@@ -128,9 +133,14 @@ mod tests {
         )
         .await
         .unwrap();
-        mute_pool(&pool, pool_address, chat_id, Utc::now() + chrono::Duration::hours(1))
-            .await
-            .unwrap();
+        mute_pool(
+            &pool,
+            pool_address,
+            chat_id,
+            Utc::now() + chrono::Duration::hours(1),
+        )
+        .await
+        .unwrap();
 
         let muted = muted_pool_addresses(&pool, chat_id).await.unwrap();
         assert!(muted.contains(&pool_address.to_string()));

@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use std::sync::Mutex;
 use std::time::Duration as StdDuration;
 
 use async_trait::async_trait;
@@ -9,7 +8,7 @@ use engine::triggers::HistoryPoint;
 use engine::{EngineConfig, Regime};
 use eyre::WrapErr;
 use sqlx::PgPool;
-use storage::queries::{indicator_history, pool_detail, watch_set};
+use storage::queries::{indicator_history, last_signal_broadcast, pool_detail, watch_set};
 use storage::types::Timeframe;
 use storage::write::{IndicatorRow, NewSignal, insert_signal};
 use tokio_util::sync::CancellationToken;
@@ -29,7 +28,7 @@ pub struct SignalsWorker {
     pool: PgPool,
     interval: StdDuration,
     engine_cfg: EngineConfig,
-    cooldown: Mutex<Cooldown>,
+    cooldown: Cooldown,
 }
 
 impl SignalsWorker {
@@ -43,7 +42,7 @@ impl SignalsWorker {
             pool,
             interval,
             engine_cfg,
-            cooldown: Mutex::new(Cooldown::new(cooldown_window)),
+            cooldown: Cooldown::new(cooldown_window),
         }
     }
 
@@ -127,11 +126,12 @@ impl SignalsWorker {
             return Ok(());
         };
 
-        let due = {
-            let mut cooldown = self.cooldown.lock().expect("cooldown mutex poisoned");
-            cooldown.should_broadcast(&row.pool_address, tf.as_str(), kind, now)
-        };
-        if !due {
+        // Reads the persisted broadcast history rather than in-memory state, so a scorer
+        // restart does not forget a recent broadcast and re-announce it early.
+        let last = last_signal_broadcast(&self.pool, &row.pool_address, tf.as_str(), kind.as_str())
+            .await
+            .wrap_err_with(|| "Loading last signal broadcast")?;
+        if !self.cooldown.is_due(last, now) {
             return Ok(());
         }
 

@@ -45,7 +45,12 @@ pub async fn upsert_regime_state(pool: &PgPool, row: &NewRegimeStateRow) -> eyre
     )
     .execute(pool)
     .await
-    .wrap_err_with(|| format!("Upserting regime state for {}/{}", row.pool_address, row.timeframe))?;
+    .wrap_err_with(|| {
+        format!(
+            "Upserting regime state for {}/{}",
+            row.pool_address, row.timeframe
+        )
+    })?;
 
     Ok(())
 }
@@ -61,7 +66,10 @@ pub struct NewVolatilityStateRow {
     pub updated_at: DateTime<Utc>,
 }
 
-pub async fn upsert_volatility_state(pool: &PgPool, row: &NewVolatilityStateRow) -> eyre::Result<()> {
+pub async fn upsert_volatility_state(
+    pool: &PgPool,
+    row: &NewVolatilityStateRow,
+) -> eyre::Result<()> {
     sqlx::query!(
         r#"
         INSERT INTO volatility_state (
