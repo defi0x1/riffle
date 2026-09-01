@@ -2,7 +2,7 @@
   "uid": "indexer-ingestion-health",
   "title": "Ingestion health",
   "description": "Indexer ingestion path: lag, decode failures, stream stability and whether the process is actually making progress.",
-  "tags": ["fee-farming", "indexer"],
+  "tags": ["riffle", "indexer"],
   "timezone": "utc",
   "schemaVersion": 39,
   "version": 1,

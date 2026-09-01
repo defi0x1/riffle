@@ -23,6 +23,36 @@ pub mod liquidity_action {
     pub const REMOVE: i16 = 1;
 }
 
+// A user action that becomes an unsigned transaction. Closed set enforced by a CHECK constraint
+// on transaction_intents.action (see 0030) -- unlike `venue`, a new kind of on-chain action is
+// rare enough, and consequential enough to get wrong, that a migration is the right cost to pay.
+pub mod intent_action {
+    pub const OPEN: i16 = 0;
+    pub const ADD: i16 = 1;
+    pub const REMOVE: i16 = 2;
+    pub const CLAIM: i16 = 3;
+    pub const CLOSE: i16 = 4;
+}
+
+// transaction_intents.status. CREATED -> SUBMITTED -> {CONFIRMED | FAILED}, or CREATED /
+// SUBMITTED -> EXPIRED if the client never comes back. CONFIRMED is terminal and is never
+// overwritten by a later FAILED or EXPIRED write -- see confirm_transaction_intent /
+// mark_intent_failed.
+pub mod intent_status {
+    pub const CREATED: i16 = 0;
+    pub const SUBMITTED: i16 = 1;
+    pub const CONFIRMED: i16 = 2;
+    pub const FAILED: i16 = 3;
+    pub const EXPIRED: i16 = 4;
+}
+
+// position_cash_flows.kind: which direction value moved across the position boundary.
+pub mod cash_flow_kind {
+    pub const DEPOSIT: i16 = 0;
+    pub const WITHDRAWAL: i16 = 1;
+    pub const FEE_CLAIM: i16 = 2;
+}
+
 // The five rollup/derived timeframes. Used to dispatch to the literal per-table query a given
 // timeframe needs -- sqlx::query!/query_as! require a literal table name, so a table name cannot
 // be parameterised at the SQL level.

@@ -73,7 +73,7 @@ Three ways to check, cheapest first:
    silence is the signal, not a log line nobody is watching. Absence of the heartbeat for more than
    a couple of `health_interval`s (default 30s each) means something is wrong even if the process
    is still running.
-3. **Grafana.** Two provisioned dashboards under the `fee-farming` folder:
+3. **Grafana.** Two provisioned dashboards under the `riffle` folder:
    - **Ingestion health** -- indexer up/down, wedged detection (`processing_slot` not advancing),
      decode error rate, stream reconnects, ingest lag in slots, RPC call rate and latency
      percentiles.

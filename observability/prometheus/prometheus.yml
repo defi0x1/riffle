@@ -1,4 +1,4 @@
-# Local scrape config for the fee-farming binaries. Every binary runs on the host, not in
+# Local scrape config for the riffle binaries. Every binary runs on the host, not in
 # compose, so targets use host.docker.internal (wired up as an extra_host on the prometheus
 # service in compose.yaml) rather than a compose service name.
 

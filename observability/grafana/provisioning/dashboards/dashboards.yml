@@ -3,9 +3,9 @@
 apiVersion: 1
 
 providers:
-  - name: fee-farming
+  - name: riffle
     orgId: 1
-    folder: fee-farming
+    folder: riffle
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30

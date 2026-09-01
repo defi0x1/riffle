@@ -1,4 +1,4 @@
-# fee-farming
+# riffle
 
 A Solana backend that indexes [Meteora DLMM](https://docs.meteora.ag) liquidity pools, computes a
 set of indicators over them at several timeframes, and serves the result through a read-only

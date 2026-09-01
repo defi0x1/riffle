@@ -2,7 +2,7 @@
   "uid": "scorer-pipeline-output",
   "title": "Pipeline output",
   "description": "What the scoring pipeline is actually producing: pool tiering, rollup freshness and signals emitted. Queried straight from Timescale, since none of this is exported to Prometheus.",
-  "tags": ["fee-farming", "scorer"],
+  "tags": ["riffle", "scorer"],
   "timezone": "utc",
   "schemaVersion": 39,
   "version": 1,
