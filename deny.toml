@@ -1,0 +1,172 @@
+# cargo-deny configuration. Run locally with `cargo deny check`; CI runs the same command
+# split into two steps (see .github/workflows/ci.yml) so a license surprise warns without
+# blocking a merge, while an advisory always blocks one.
+#
+# https://embarkstudios.github.io/cargo-deny/ for the full config reference.
+
+[graph]
+# All three application targets are Linux systemd units (docs/operations.md); nothing here
+# is built for another OS, so pruning the graph to Linux keeps duplicate-version noise down
+# to dependencies that are actually compiled.
+targets = ["x86_64-unknown-linux-gnu"]
+
+# advisories: fails the build on any RUSTSEC entry (vulnerability, unmaintained, unsound,
+# yanked) not explicitly listed below. This is the job that exists so the next high-severity
+# advisory in a transitive dependency gets caught automatically instead of found by hand.
+[advisories]
+ignore = [
+    # Transitive-only, no direct dependency on any of these; each is either "no safe upgrade
+    # available" upstream or an upgrade that requires a Cargo.lock change outside this
+    # tree's ownership (see the workspace Cargo.toml, owned by the storage/dlmm_tx work).
+    # Re-run `cargo deny check advisories` after any dependency bump to see whether an entry
+    # here can be dropped.
+
+    # --- unmaintained, no replacement pulled transitively (no action available) ---
+    { id = "RUSTSEC-2024-0375", reason = "atty, via solana-sdk's solana-logger -> env_logger; no direct dependency, upstream has no fixed release" },
+    { id = "RUSTSEC-2025-0141", reason = "bincode 1.x, via solana-sdk's solana-account; solana-sdk 2.x pins this, not a version we choose" },
+    { id = "RUSTSEC-2024-0388", reason = "derivative, via ark-ec/ark-ff (BN254 curve math pulled in by solana-sdk); no fixed release upstream" },
+    { id = "RUSTSEC-2025-0161", reason = "libsecp256k1, via solana-sdk's solana-secp256k1-program; unused code path (this backend never signs, secp256k1 is Ethereum-style precompile support only), no fixed release upstream" },
+    { id = "RUSTSEC-2025-0119", reason = "number_prefix, via indicatif (crawler's progress bar); no fixed release upstream" },
+    { id = "RUSTSEC-2024-0436", reason = "paste, via ark-ff (BN254 curve math); no fixed release upstream" },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error, via teloxide's aquamarine (doc-comment diagram macro, dev-time only); no fixed release upstream" },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile, via teloxide-core's reqwest 0.11; no fixed release upstream, superseded crate not yet adopted by that dependency chain" },
+
+    # --- a safe upgrade exists upstream, but landing it means bumping Cargo.lock, which is
+    # outside this change's scope (deny.toml/CI only) -- tracked here instead of silently
+    # passing. Whoever next touches Cargo.lock should run `cargo update -p <crate>` for these
+    # and drop the corresponding entry. ---
+    { id = "RUSTSEC-2024-0344", reason = "curve25519-dalek timing variability, via ed25519-dalek 1.x (solana-sdk's signature verification path); fix is `cargo update -p curve25519-dalek` to >=4.1.3, not done here -- backend never signs, so this is a verification-side timing concern, not a key-recovery one" },
+    { id = "RUSTSEC-2022-0093", reason = "ed25519-dalek 1.x double public key oracle; fix is upgrading ed25519-dalek to >=2 (pulled in via ed25519-dalek-bip32, itself via solana-sdk), not done here -- this backend never signs with anything, so the oracle-misuse precondition (an application that signs attacker-chosen messages) does not apply operationally" },
+    { id = "RUSTSEC-2026-0258", reason = "h2 unbounded empty DATA frames (DoS), via teloxide-core's reqwest 0.11 -> hyper 0.14; fix is `cargo update -p h2`, not done here" },
+    { id = "RUSTSEC-2024-0437", reason = "protobuf 2.x uncontrolled recursion, via prometheus (libraries/metrics); fix is `cargo update -p protobuf` to >=3.7.2, not done here -- exposure is local Prometheus scrape parsing, not attacker-reachable input" },
+]
+
+# licenses: an explicit allow list rather than a policy of excluding copyleft, so anything
+# not already seen in the graph shows up as a finding to look at, not a silent pass.
+# Regenerate the list this was built from with `cargo deny list`.
+[licenses]
+allow = [
+    "LicenseRef-Proprietary",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    # LGPL-2.1-or-later is not in this list on purpose: the one crate that carries it
+    # (r-efi, a UEFI-target dependency pulled in transitively and pruned by [graph].targets
+    # above) is tri-licensed MIT OR Apache-2.0 OR LGPL-2.1-or-later, and is satisfied by the
+    # MIT/Apache-2.0 branch of that OR. Adding it here would be redundant, not protective.
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+# Workspace crates default to "publishable" from cargo's own point of view (no Cargo.toml
+# here sets `publish = false`), so cargo-deny's unpublished-crate exemption -- which keys
+# off that field -- does not apply and `ignore = true` here would do nothing for them.
+# Each is instead covered by an explicit [[licenses.clarify]] below: absent a declared
+# license, copyright defaults to "all rights reserved", which is what LicenseRef-Proprietary
+# states plainly rather than leaving implied.
+ignore = false
+
+[[licenses.clarify]]
+crate = "bot"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "common"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "crawler"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "dlmm_decode"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "dlmm_math"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "dlmm_tx"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "engine"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "indexer"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "integration"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "logger"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "metrics"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "scorer"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "source"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[[licenses.clarify]]
+crate = "storage"
+expression = "LicenseRef-Proprietary"
+license-files = []
+
+[bans]
+# Duplicate crate versions are common in a graph this size (solana-sdk's own dependency
+# tree pins several crates independently of what the rest of the workspace wants) and are
+# not, by themselves, a security or licensing problem -- surfaced as a warning to look at,
+# not a build failure to chase on every `cargo update`.
+multiple-versions = "warn"
+wildcards = "allow"
+
+deny = [
+    # openssl/native-tls is pulled in transitively by teloxide-core's reqwest 0.11 dependency
+    # (bin/bot only; every other reqwest user in this workspace pins rustls-tls with
+    # default-features = false, see the workspace Cargo.toml comment on the `reqwest` entry).
+    # Not banned here: banning it would fail this exact tree today, and swapping teloxide's
+    # TLS backend is a Cargo.toml change outside this file's scope. Left as a comment, not a
+    # deny rule, so it is not forgotten -- worth revisiting if teloxide ever exposes a
+    # rustls feature flag.
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

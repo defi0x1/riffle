@@ -1,0 +1,33 @@
+title = "riffle secret scan"
+
+# Extends gitleaks' built-in rule set (AWS, GitHub, Stripe, generic high-entropy secrets,
+# PEM private-key headers, and the rest) rather than replacing it. Everything below is a
+# narrow addition for this repo's own known-safe values, not a loosening of the base rules.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "known-public constants -- not secrets"
+
+regexes = [
+  # USDC's mainnet mint address. Public, permanent, and reused across dozens of pool/position
+  # test fixtures as the quote-token side of a pair. High entropy sitting next to a field
+  # named token_x/token_y is exactly generic-api-key's trigger shape; it is still not a
+  # secret. If this ever needs a second entry, prefer naming the specific constant (as here)
+  # over a broad base58-shaped regex -- a real leaked base58 secret key is ~64 bytes (~87-88
+  # base58 characters), well outside the 32-44 character range every real pubkey in this
+  # codebase falls into, so widening this carelessly is the actual risk to avoid.
+  '''EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v''',
+]
+
+# config/*.example.yaml and .env.example are deliberately NOT path-allowlisted here. A path
+# entry would exempt the whole file from every rule, which is exactly wrong for a file whose
+# entire job is holding a credential-shaped value -- it would stop a real key pasted in by
+# mistake from ever being caught. Their current placeholders (YOUR_API_KEY, YOUR_BOTFATHER_
+# TOKEN, YOUR_GEYSER_X_TOKEN, changeme-geyser-token, and the repeated-word bot-token example)
+# are low-entropy and non-random by construction, so the default rule set already produces no
+# findings against them today -- verified by running `gitleaks detect --no-git --source
+# .env.example` and the same against config/, both clean. If a future placeholder edit makes
+# one of these look enough like a real credential to trip a rule, that is the scanner working
+# correctly, not a bug to silence -- fix the placeholder to be obviously fake instead of
+# adding an allowlist entry for it.

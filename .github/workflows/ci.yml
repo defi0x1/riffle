@@ -124,3 +124,92 @@ jobs:
 
       - name: Provenance check
         run: ./scripts/provenance-check.sh
+
+  # V2 adds a keyless backend: users hold a Solana keypair on-device, the backend only ever
+  # builds unsigned transactions. This job is what keeps "keyless" a checked property instead
+  # of an assertion in a design doc -- see docs/security.md.
+  keyless-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Keyless-backend guard
+        run: sh scripts/keyless-guard.sh
+
+  # gitleaks scans tracked history, not just the current tree, so a secret that was committed
+  # and later removed still fails this job -- fetch-depth: 0 gives it that history to look at.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Pinned release binary rather than a third-party Action, with a checked sha256 --
+      # avoids depending on the gitleaks Action's own licensing terms for a private repo, and
+      # avoids trusting whatever the download happens to serve on the day CI runs.
+      - name: Install gitleaks
+        run: |
+          curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+
+      - name: Secret scan
+        run: gitleaks detect --source . --config .gitleaks.toml -v
+
+  # cargo-deny: advisories/bans/sources are a hard gate (this is the job that would have
+  # caught the last high-severity advisory automatically instead of by hand); licences are a
+  # judgement call, so that check runs but does not block a merge on its own.
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-deny
+        run: |
+          curl -sSL -o cargo-deny.tar.gz https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz
+          echo "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f  cargo-deny.tar.gz" | sha256sum -c -
+          tar -xzf cargo-deny.tar.gz
+          sudo mv cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny /usr/local/bin/cargo-deny
+
+      - name: Advisories, bans and sources
+        run: cargo deny check advisories bans sources
+
+      - name: Licences
+        run: cargo deny check licenses
+        continue-on-error: true
+
+  # miniapp/ is a separate codebase inside this repo -- the one place a private key exists at
+  # all (see docs/security.md). It gets its own lane rather than folding into the jobs above:
+  # typecheck and test are the same kind of correctness gate the Rust jobs run; npm audit is
+  # this side's answer to what cargo-deny is for the Rust dependency graph.
+  miniapp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # audit-level=high: a moderate-severity report currently exists (uuid's buffer-bounds
+      # check issue, transitive via jayson via @solana/web3.js's RPC client) with no
+      # non-breaking fix published upstream yet -- tracked here, not hidden. Re-run
+      # `npm audit` after any @solana/web3.js bump to see whether it has cleared.
+      - name: Dependency audit
+        run: npm audit --audit-level=high
