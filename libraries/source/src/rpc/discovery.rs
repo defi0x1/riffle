@@ -1,9 +1,9 @@
 use eyre::WrapErr;
 use solana_account_decoder::{UiAccountEncoding, UiDataSliceConfig};
-use solana_client::{
-    nonblocking::rpc_client::RpcClient,
-    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
-    rpc_filter::{Memcmp, RpcFilterType},
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::{
+    config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
+    filter::{Memcmp, RpcFilterType},
 };
 
 use crate::PoolMeta;

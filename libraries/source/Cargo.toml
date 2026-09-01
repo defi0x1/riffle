@@ -8,7 +8,8 @@ common = { workspace = true }
 metrics = { workspace = true }
 dlmm_decode = { workspace = true }
 lb_clmm = { workspace = true }
-solana-client = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
 solana-sdk = { workspace = true }
 solana-account-decoder = { workspace = true }
 tokio = { workspace = true }

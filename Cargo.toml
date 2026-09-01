@@ -19,7 +19,8 @@ engine = { path = "libraries/engine" }
 
 # Solana
 lb_clmm = { path = "../DLMM/programs/lb_clmm", default-features = false, features = ["no-entrypoint"] }
-solana-client = "2.1"
+solana-rpc-client = "2.1"
+solana-rpc-client-api = "2.1"
 solana-sdk = "2.1"
 solana-account-decoder = "2.1"
 yellowstone-grpc-client = "9"

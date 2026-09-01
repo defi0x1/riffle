@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::stream::{self, BoxStream, StreamExt};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 
 use crate::{

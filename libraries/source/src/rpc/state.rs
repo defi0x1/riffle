@@ -6,7 +6,8 @@ use backon::{ExponentialBuilder, Retryable};
 use eyre::WrapErr;
 use futures::stream::{self, BoxStream, StreamExt};
 use solana_account_decoder::UiAccountEncoding;
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcAccountInfoConfig};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::config::RpcAccountInfoConfig;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::{Mutex, Semaphore};
 
@@ -98,7 +99,7 @@ impl StatePoller {
                 .with_max_times(max_retries),
         )
         .notify(
-            |err: &solana_client::client_error::ClientError, delay: Duration| {
+            |err: &solana_rpc_client_api::client_error::Error, delay: Duration| {
                 tracing::warn!(error = ?err, delay = ?delay, "Retrying getMultipleAccounts");
             },
         )
