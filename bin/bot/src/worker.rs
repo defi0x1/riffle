@@ -17,7 +17,6 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::is_authorized;
 use crate::cli;
 use crate::config::Config;
-use crate::mute::MuteStore;
 use crate::ratelimit;
 use crate::{handlers, render};
 
@@ -47,7 +46,6 @@ impl common::Worker for TelegramWorker {
         let bot = Bot::new(self.config.bot_token.clone());
         register_commands(&bot).await?;
 
-        let mutes = Arc::new(MuteStore::new());
         let last_sent: Arc<AsyncMutex<HashMap<ChatId, Instant>>> =
             Arc::new(AsyncMutex::new(HashMap::new()));
 
@@ -77,12 +75,11 @@ impl common::Worker for TelegramWorker {
                     let pool = self.pool.clone();
                     let allowed = self.config.allowed_chats.clone();
                     let max_rows = self.config.max_rows;
-                    let mutes = mutes.clone();
                     let last_sent = last_sent.clone();
 
                     tokio::spawn(async move {
                         if let Err(e) =
-                            handle_message(&bot, chat_id, &text, &pool, &allowed, max_rows, &mutes, &last_sent).await
+                            handle_message(&bot, chat_id, &text, &pool, &allowed, max_rows, &last_sent).await
                         {
                             tracing::error!(error = ?e, "Failed to handle a message");
                         }
@@ -95,7 +92,6 @@ impl common::Worker for TelegramWorker {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn handle_message(
     bot: &Bot,
     chat_id: ChatId,
@@ -103,7 +99,6 @@ async fn handle_message(
     pool: &PgPool,
     allowed: &[i64],
     max_rows: usize,
-    mutes: &MuteStore,
     last_sent: &AsyncMutex<HashMap<ChatId, Instant>>,
 ) -> eyre::Result<()> {
     if !is_authorized(chat_id.0, allowed) {
@@ -120,7 +115,7 @@ async fn handle_message(
         Err(e) => return send(bot, chat_id, render::render_parse_error(&e), last_sent).await,
     };
 
-    let body = handlers::dispatch(pool, mutes, max_rows, command)
+    let body = handlers::dispatch(pool, chat_id.0, max_rows, command)
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = ?e, "Command handler failed");

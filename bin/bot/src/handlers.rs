@@ -1,41 +1,44 @@
 // Turns a parsed Command into a rendered message. This is the only module that calls into
 // `storage`, and it never issues SQL of its own -- every function here is a query or write
 // function that already exists in that crate, composed and formatted.
+use std::collections::HashSet;
+
 use chrono::Utc;
 use eyre::WrapErr;
 use sqlx::PgPool;
 
 use storage::queries::{
-    PoolRanking, PotentialPoolFilters, ingest_health, pool_detail, potential_pools, rationale_for,
-    top_pools, watch_set,
+    PoolRanking, PotentialPoolFilters, VolumeRanking, ingest_health, latest_config,
+    muted_pool_addresses, pool_detail, potential_pools, rationale_for, top_pools,
+    volume_ranked_pools, watch_set,
 };
 use storage::types::{Timeframe, venue};
-use storage::write::{IndicatorRow, demote_pools, promote_pools};
+use storage::write::{demote_pools, mute_pool, promote_pools};
 
 use crate::cli::{Command, WatchAction};
-use crate::mute::MuteStore;
+use crate::mute::tag_muted;
 use crate::render;
 
 // Candidates are pulled well beyond what is displayed and re-sorted here by whichever metric
 // the command actually ranks on -- top_pools only orders by r_org, and no query returns a
-// vol_tvl- or top_score-ordered set directly. Re-sorting a already-fetched Vec is rendering
-// logic, not a new query.
+// top_score-ordered set directly. Re-sorting an already-fetched Vec is rendering logic, not a
+// new query. /volume no longer needs this: volume_ranked_pools already ranks and limits.
 const CANDIDATE_MULTIPLIER: i64 = 5;
 
 pub async fn dispatch(
     pool: &PgPool,
-    mutes: &MuteStore,
+    chat_id: i64,
     max_rows: usize,
     command: Command,
 ) -> eyre::Result<String> {
     match command {
         Command::Top { tf } => top(pool, tf.into(), max_rows).await,
         Command::Volume { tf } => volume(pool, tf.into(), max_rows).await,
-        Command::Potential { tf } => potential(pool, tf.into(), mutes).await,
+        Command::Potential { tf } => potential(pool, tf.into(), chat_id).await,
         Command::Pool { address } => pool_cmd(pool, &address).await,
         Command::Why { address } => why(pool, &address).await,
         Command::Watch { address, action } => watch(pool, &address, action).await,
-        Command::Mute { address, duration } => mute(pool, mutes, &address, duration.into()).await,
+        Command::Mute { address, duration } => mute(pool, chat_id, &address, duration.into()).await,
         Command::Status => status(pool).await,
     }
 }
@@ -61,49 +64,14 @@ async fn top(pool: &PgPool, tf: Timeframe, max_rows: usize) -> eyre::Result<Stri
 }
 
 async fn volume(pool: &PgPool, tf: Timeframe, max_rows: usize) -> eyre::Result<String> {
-    let mut rows = top_pools(
-        pool,
-        venue::DLMM,
-        tf,
-        max_rows as i64 * CANDIDATE_MULTIPLIER,
-    )
-    .await
-    .wrap_err_with(|| "Loading volume candidates")?;
+    let rows: Vec<VolumeRanking> = volume_ranked_pools(pool, venue::DLMM, tf, max_rows as i64)
+        .await
+        .wrap_err_with(|| "Loading volume ranking")?;
 
-    rows.sort_by(|a, b| {
-        b.vol_tvl
-            .partial_cmp(&a.vol_tvl)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    rows.truncate(max_rows);
-
-    // vol_change lives on indicators_{tf}, not on the flat PoolRanking row that top_pools
-    // returns, so it takes one pool_detail call per displayed row. Bounded by max_rows, so
-    // this stays well inside the per-command latency budget.
-    let mut with_change = Vec::with_capacity(rows.len());
-    for row in rows {
-        let change = pool_detail(pool, &row.pool_address)
-            .await
-            .ok()
-            .flatten()
-            .and_then(|detail| indicator_for(&detail, tf).and_then(|i| i.vol_change));
-        with_change.push((row, change));
-    }
-
-    Ok(render::render_volume(&with_change, tf))
+    Ok(render::render_volume(&rows, tf))
 }
 
-fn indicator_for(detail: &storage::queries::PoolDetail, tf: Timeframe) -> Option<&IndicatorRow> {
-    match tf {
-        Timeframe::M5 => detail.m5.as_ref(),
-        Timeframe::M10 => detail.m10.as_ref(),
-        Timeframe::H1 => detail.h1.as_ref(),
-        Timeframe::H4 => detail.h4.as_ref(),
-        Timeframe::H24 => detail.h24.as_ref(),
-    }
-}
-
-async fn potential(pool: &PgPool, tf: Timeframe, mutes: &MuteStore) -> eyre::Result<String> {
+async fn potential(pool: &PgPool, tf: Timeframe, chat_id: i64) -> eyre::Result<String> {
     let filters = PotentialPoolFilters::default();
     let rows: Vec<PoolRanking> = potential_pools(pool, venue::DLMM, tf, &filters)
         .await
@@ -112,13 +80,12 @@ async fn potential(pool: &PgPool, tf: Timeframe, mutes: &MuteStore) -> eyre::Res
     // This is the one ranking that reads as a suggestion rather than a listing, so a muted
     // pool has to say so here -- surfacing a "worth farming" row for something the operator
     // just told the bot to stay quiet about would be worse than not checking at all.
-    let rows: Vec<(PoolRanking, bool)> = rows
+    let muted: HashSet<String> = muted_pool_addresses(pool, chat_id)
+        .await
+        .wrap_err_with(|| format!("Loading muted pools for chat {chat_id}"))?
         .into_iter()
-        .map(|row| {
-            let muted = mutes.is_muted(&row.pool_address);
-            (row, muted)
-        })
         .collect();
+    let rows = tag_muted(rows, &muted, |row| &row.pool_address);
 
     Ok(render::render_potential(&rows, tf, filters.min_r_org))
 }
@@ -180,7 +147,7 @@ async fn watch(pool: &PgPool, address: &str, action: Option<WatchAction>) -> eyr
 
 async fn mute(
     pool: &PgPool,
-    mutes: &MuteStore,
+    chat_id: i64,
     address: &str,
     duration: std::time::Duration,
 ) -> eyre::Result<String> {
@@ -194,14 +161,21 @@ async fn mute(
 
     let until = Utc::now()
         + chrono::Duration::from_std(duration).unwrap_or_else(|_| chrono::Duration::zero());
-    mutes.mute(address.to_string(), until);
+    mute_pool(pool, address, chat_id, until)
+        .await
+        .wrap_err_with(|| format!("Muting {address} for chat {chat_id}"))?;
 
     Ok(render::render_mute(address, until))
 }
 
 async fn status(pool: &PgPool) -> eyre::Result<String> {
-    let (ingest, watched) = tokio::try_join!(ingest_health(pool), watch_set(pool))
-        .wrap_err_with(|| "Loading status")?;
+    let (ingest, watched, config) =
+        tokio::try_join!(ingest_health(pool), watch_set(pool), latest_config(pool))
+            .wrap_err_with(|| "Loading status")?;
 
-    Ok(render::render_status(&ingest, watched.len()))
+    Ok(render::render_status(
+        &ingest,
+        watched.len(),
+        config.as_ref(),
+    ))
 }

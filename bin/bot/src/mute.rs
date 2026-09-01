@@ -1,76 +1,63 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::HashSet;
 
-use chrono::{DateTime, Utc};
-
-// Process-local mute registry. There is no persisted store for this: signal suppression has
-// no backing table or query in storage, and this binary writes no SQL of its own, so a mute
-// resets on restart. Acceptable for a single operator; worth a real table once there is an
-// alert-broadcasting subsystem for it to actually gate.
-#[derive(Default)]
-pub struct MuteStore {
-    until: Mutex<HashMap<String, DateTime<Utc>>>,
-}
-
-// A poisoned lock still holds a perfectly usable map; recovering it beats panicking a
-// message handler over an unrelated task's bug.
-fn lock(
-    mutex: &Mutex<HashMap<String, DateTime<Utc>>>,
-) -> std::sync::MutexGuard<'_, HashMap<String, DateTime<Utc>>> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-impl MuteStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn mute(&self, pool_address: String, until: DateTime<Utc>) {
-        lock(&self.until).insert(pool_address, until);
-    }
-
-    pub fn is_muted(&self, pool_address: &str) -> bool {
-        lock(&self.until)
-            .get(pool_address)
-            .is_some_and(|until| *until > Utc::now())
-    }
+// Muting is now a row in `muted_pools` (storage::write::mute_pool /
+// storage::queries::muted_pool_addresses), keyed by (pool_address, chat_id), with the SQL
+// predicate `until > now()` doing expiry -- nothing here needs a clock, a sweeper, or process
+// memory anymore. The one piece of logic still local to this binary is turning a fetched set
+// of muted addresses into a per-row tag for rendering, which stays pure and database-free.
+pub fn tag_muted<T>(
+    rows: Vec<T>,
+    muted: &HashSet<String>,
+    address_of: impl Fn(&T) -> &str,
+) -> Vec<(T, bool)> {
+    rows.into_iter()
+        .map(|row| {
+            let is_muted = muted.contains(address_of(&row));
+            (row, is_muted)
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[derive(Debug, Clone, PartialEq)]
+    struct Row(String);
+
     #[test]
-    fn test_muted_pool_is_muted_before_expiry() {
-        let store = MuteStore::new();
-        store.mute("pool1".to_string(), Utc::now() + chrono::Duration::hours(1));
-        assert!(store.is_muted("pool1"));
+    fn test_tags_a_muted_row() {
+        let muted: HashSet<String> = ["pool1".to_string()].into_iter().collect();
+        let rows = vec![Row("pool1".to_string())];
+
+        let tagged = tag_muted(rows, &muted, |r| &r.0);
+
+        assert_eq!(tagged, vec![(Row("pool1".to_string()), true)]);
     }
 
     #[test]
-    fn test_expired_mute_is_not_muted() {
-        let store = MuteStore::new();
-        store.mute(
-            "pool1".to_string(),
-            Utc::now() - chrono::Duration::seconds(1),
+    fn test_does_not_tag_an_unmuted_row() {
+        let muted: HashSet<String> = HashSet::new();
+        let rows = vec![Row("pool1".to_string())];
+
+        let tagged = tag_muted(rows, &muted, |r| &r.0);
+
+        assert_eq!(tagged, vec![(Row("pool1".to_string()), false)]);
+    }
+
+    #[test]
+    fn test_tags_rows_independently_within_the_same_batch() {
+        let muted: HashSet<String> = ["pool2".to_string()].into_iter().collect();
+        let rows = vec![Row("pool1".to_string()), Row("pool2".to_string())];
+
+        let tagged = tag_muted(rows, &muted, |r| &r.0);
+
+        assert_eq!(
+            tagged,
+            vec![
+                (Row("pool1".to_string()), false),
+                (Row("pool2".to_string()), true),
+            ]
         );
-        assert!(!store.is_muted("pool1"));
-    }
-
-    #[test]
-    fn test_unmuted_pool_is_not_muted() {
-        let store = MuteStore::new();
-        assert!(!store.is_muted("pool1"));
-    }
-
-    #[test]
-    fn test_remuting_overwrites_previous_expiry() {
-        let store = MuteStore::new();
-        store.mute(
-            "pool1".to_string(),
-            Utc::now() - chrono::Duration::seconds(1),
-        );
-        store.mute("pool1".to_string(), Utc::now() + chrono::Duration::hours(1));
-        assert!(store.is_muted("pool1"));
     }
 }

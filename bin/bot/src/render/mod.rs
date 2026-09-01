@@ -7,7 +7,8 @@ pub use paginate::{MESSAGE_LIMIT, paginate};
 use chrono::{DateTime, Utc};
 
 use storage::queries::{
-    IngestHealthStatus, PoolDetail, PoolRanking, RationaleItem, SignalWithRationale,
+    IngestHealthStatus, LatestConfig, PoolDetail, PoolRanking, RationaleItem, SignalWithRationale,
+    VolumeRanking,
 };
 use storage::types::{Timeframe, quality, tier};
 use storage::write::IndicatorRow;
@@ -41,6 +42,13 @@ fn fmt_i64(v: Option<i64>) -> String {
 }
 
 fn fmt_i32(v: Option<i32>) -> String {
+    v.map(|v| v.to_string())
+        .unwrap_or_else(|| "n/a".to_string())
+}
+
+// Generic over Decimal/etc so this module never has to name a numeric type it does not
+// otherwise depend on -- it just needs whatever storage handed back to be Display.
+fn fmt_opt<T: std::fmt::Display>(v: Option<T>) -> String {
     v.map(|v| v.to_string())
         .unwrap_or_else(|| "n/a".to_string())
 }
@@ -107,15 +115,13 @@ pub fn render_top(rows: &[PoolRanking], tf: Timeframe) -> String {
     out
 }
 
-// vol_tvl is the closest thing any read query exposes to "highest volume" -- no query
-// returns a raw volume figure, only this ratio and the bucket-over-bucket change already
-// computed onto indicators_{tf}.vol_change. Reported here rather than inventing an absolute
-// number the storage layer does not provide.
-pub fn render_volume(rows: &[(PoolRanking, Option<f64>)], tf: Timeframe) -> String {
+// Ranked by raw volume_usd from volume_ranked_pools, with the bucket-over-bucket vol_change
+// riding along in the same row -- no re-sorting and no per-row detail fetch needed here.
+pub fn render_volume(rows: &[VolumeRanking], tf: Timeframe) -> String {
     let mut out = format!(
         "{}\n{}\n\n",
         bold(&format!("Volume ranking ({})", tf.as_str())),
-        plain("ranked by volume-to-TVL ratio (no raw volume figure is exposed); not gate-filtered")
+        plain("ranked by volume; not gate-filtered")
     );
 
     if rows.is_empty() {
@@ -123,13 +129,13 @@ pub fn render_volume(rows: &[(PoolRanking, Option<f64>)], tf: Timeframe) -> Stri
         return out;
     }
 
-    for (i, (row, vol_change)) in rows.iter().enumerate() {
+    for (i, row) in rows.iter().enumerate() {
         out.push_str(&format!(
-            "{}. {}\n   vol/tvl {}  change vs previous bucket {}  [{}]\n",
+            "{}. {}\n   volume {}  change vs previous bucket {}  [{}]\n",
             i + 1,
             pair(&row.token_x, &row.token_y),
-            code(&fmt_f64(row.vol_tvl, 4)),
-            code(&fmt_f64(*vol_change, 3)),
+            code(&fmt_opt(row.volume_usd)),
+            code(&fmt_f64(row.vol_change, 3)),
             plain(quality_label(&row.quality)),
         ));
         out.push_str(&format!("   {}\n", code(&row.pool_address)));
@@ -316,18 +322,30 @@ pub fn render_watch_exempt(address: &str) -> String {
 
 pub fn render_mute(address: &str, until: DateTime<Utc>) -> String {
     format!(
-        "{} muted until {} UTC. This mute lives only in the bot process and does not survive \
-         a restart -- there is no persisted mute table yet.",
+        "{} muted until {} UTC.",
         code(address),
         code(&until.format("%Y-%m-%d %H:%M").to_string()),
     )
 }
 
-// config_hash is stamped on every signal so a bad config cannot ship quietly, but no read
-// query currently surfaces "the latest one" in general -- that would need a new query in
-// storage, not SQL written here, so it is left off rather than guessed at.
-pub fn render_status(ingest: &[IngestHealthStatus], tier_size: usize) -> String {
+// config_hash is stamped on every signal at write time; latest_config surfaces the newest one
+// across all pools as "what configuration is currently applied".
+pub fn render_status(
+    ingest: &[IngestHealthStatus],
+    tier_size: usize,
+    config: Option<&LatestConfig>,
+) -> String {
     let mut out = format!("{}\n\n", bold("Status"));
+
+    match config {
+        Some(c) => out.push_str(&format!(
+            "config: {} (as of {})\n",
+            code(&c.config_hash),
+            code(&c.ts.format("%Y-%m-%d %H:%M:%S").to_string()),
+        )),
+        None => out.push_str(&plain("config: no signals recorded yet.\n")),
+    }
+
     out.push_str(&format!(
         "watched pools: {}\n\n",
         code(&tier_size.to_string())
