@@ -3,19 +3,27 @@
 // no-database case.
 
 use sqlx::PgPool;
-use std::sync::OnceLock;
+use sqlx::postgres::PgPoolOptions;
 
-static POOL: OnceLock<PgPool> = OnceLock::new();
-
+// Every sqlx connection is registered with the Tokio I/O driver that was active when it was
+// opened, and `#[tokio::test]` hands each test function a private runtime that is torn down
+// the instant that test returns. A `PgPool` cached once in a process-wide static and handed
+// out to later tests -- as this used to do -- ends up full of connections whose driver no
+// longer exists: every query against them hangs until the pool's acquire timeout fires rather
+// than failing, which is why the suite got slower and more broken under `--test-threads=1`
+// (each test tears down the previous one's runtime before the next reuses the pool) than under
+// the default parallel runner (many of those runtimes are still alive when reused). Connecting
+// fresh here ties every connection to the same runtime for its entire life, so there is nothing
+// left to go stale.
 pub async fn test_pool() -> PgPool {
-    if let Some(pool) = POOL.get() {
-        return pool.clone();
-    }
-
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:55432/feefarming".to_string());
 
-    let pool = PgPool::connect(&database_url)
+    // Small on purpose: each test opens its own pool now, and dozens of tests running in
+    // parallel must not exhaust the server's connection limit between them.
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(&database_url)
         .await
         .expect("connecting to test database");
 
@@ -23,9 +31,6 @@ pub async fn test_pool() -> PgPool {
         .await
         .expect("running migrations against test database");
 
-    // A OnceLock cannot hold an error path gracefully with set(); this only races on the very
-    // first call from concurrent tests, and losing the race just means using the other pool.
-    let _ = POOL.set(pool.clone());
     pool
 }
 
