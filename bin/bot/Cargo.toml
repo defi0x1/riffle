@@ -1,0 +1,10 @@
+[package]
+name = "bot"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+logger = { workspace = true }
+clap = { workspace = true }
+eyre = { workspace = true }
+tokio = { workspace = true }

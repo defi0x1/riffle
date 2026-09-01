@@ -1,0 +1,12 @@
+/target
+.env
+.env.*
+!.env.example
+
+# real configuration; only the examples are tracked
+/config/*.yaml
+!/config/*.example.yaml
+
+/data
+*.log
+.DS_Store

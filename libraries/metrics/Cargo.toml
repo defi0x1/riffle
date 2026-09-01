@@ -1,0 +1,13 @@
+[package]
+name = "metrics"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap = { workspace = true }
+eyre = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+axum = { workspace = true }
+prometheus = { workspace = true }

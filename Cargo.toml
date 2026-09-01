@@ -1,0 +1,72 @@
+[workspace]
+members = ["bin/*", "libraries/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+# Local
+common = { path = "libraries/common" }
+logger = { path = "libraries/logger" }
+metrics = { path = "libraries/metrics" }
+source = { path = "libraries/source" }
+dlmm_decode = { path = "libraries/dlmm_decode" }
+dlmm_math = { path = "libraries/dlmm_math" }
+storage = { path = "libraries/storage" }
+engine = { path = "libraries/engine" }
+
+# Solana
+lb_clmm = { path = "../DLMM/programs/lb_clmm", default-features = false, features = ["no-entrypoint"] }
+solana-client = "2.1"
+solana-sdk = "2.1"
+solana-account-decoder = "2.1"
+yellowstone-grpc-client = "9"
+yellowstone-grpc-proto = "9"
+
+# Runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+async-trait = "0.1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono", "rust_decimal", "macros", "migrate"] }
+rust_decimal = "1.36"
+
+# HTTP
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest-middleware = "0.4"
+reqwest-retry = "0.7"
+
+# Telegram
+teloxide = { version = "0.13", features = ["macros"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Metrics
+prometheus = "0.13"
+axum = "0.8"
+
+# Misc
+clap = { version = "4", features = ["derive", "env"] }
+eyre = "0.6"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+humantime = "2"
+humantime-serde = "1"
+chrono = { version = "0.4", features = ["serde"] }
+backon = "1"
+bs58 = "0.5"
+borsh = "1"
+
+[profile.dev]
+opt-level = 1
+overflow-checks = false
+
+[profile.bench]
+debug = true
