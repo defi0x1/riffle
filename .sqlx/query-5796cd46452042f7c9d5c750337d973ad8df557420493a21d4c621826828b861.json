@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT bucket_start, volume_usd, trade_fee_usd, swap_count, unique_traders,\n               price_open, price_high, price_low, price_close,\n               tvl_close, active_tvl_close, active_tvl_median, active_bin_close, total_fee_bps_close\n        FROM pool_metrics_5m\n        WHERE pool_address = $1 AND bucket_start <= $2\n        ORDER BY bucket_start DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "volume_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "trade_fee_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "swap_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "unique_traders",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "price_open",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_high",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "price_low",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "price_close",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "tvl_close",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "active_tvl_close",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "active_tvl_median",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "active_bin_close",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "total_fee_bps_close",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "5796cd46452042f7c9d5c750337d973ad8df557420493a21d4c621826828b861"
+}

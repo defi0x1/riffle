@@ -36,3 +36,6 @@ pub use ingest_health::*;
 
 mod tier;
 pub use tier::*;
+
+mod pipeline_state;
+pub use pipeline_state::*;

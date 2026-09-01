@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT bucket_start AS \"bucket_start!\", volume_usd, trade_fee_usd,\n               swap_count::int4 AS \"swap_count\", unique_traders::int4 AS \"unique_traders\",\n               price_open, price_high, price_low, price_close,\n               tvl_close, active_tvl_close, active_tvl_median, active_bin_close, total_fee_bps_close\n        FROM pool_metrics_1h\n        WHERE pool_address = $1 AND bucket_start <= $2\n        ORDER BY bucket_start DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket_start!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "volume_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "trade_fee_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "swap_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "unique_traders",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "price_open",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_high",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "price_low",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "price_close",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "tvl_close",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "active_tvl_close",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "active_tvl_median",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "active_bin_close",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "total_fee_bps_close",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      null,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "1d4b8be1a54f441f9be4c2b390fb2ebe8805500ff70d998d97b6a778e8216c1d"
+}

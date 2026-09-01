@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            pool_address,\n            sum(CASE WHEN action = 0 THEN amount_usd WHEN action = 1 THEN -amount_usd ELSE 0 END)\n                AS net_deposit_usd,\n            count(*) FILTER (WHERE action = 0) AS add_count,\n            count(*) FILTER (WHERE action = 1) AS remove_count\n        FROM liquidity_events\n        WHERE pool_address = ANY($1) AND ts >= $2 AND ts < $3\n        GROUP BY pool_address\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "net_deposit_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "add_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "remove_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "bf41632a71127514d86ec8538149658a86761625b40751f532cb9d3f9570a8ac"
+}

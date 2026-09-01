@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT sigma_fast_variance, sigma_slow_variance, first_observed_at\n        FROM volatility_state\n        WHERE pool_address = $1 AND venue = $2 AND timeframe = $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sigma_fast_variance",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 1,
+        "name": "sigma_slow_variance",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "first_observed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "709cae50c88ca5c97dab856b0614beae1e92524ad4b4ac0bfd87fa6a33018c58"
+}

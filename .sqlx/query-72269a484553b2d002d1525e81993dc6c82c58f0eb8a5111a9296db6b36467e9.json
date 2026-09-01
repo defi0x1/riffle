@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ts, bin_id, quote_value_usd\n        FROM active_bin_snapshots\n        WHERE pool_address = $1\n        ORDER BY ts DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "bin_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "quote_value_usd",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "72269a484553b2d002d1525e81993dc6c82c58f0eb8a5111a9296db6b36467e9"
+}

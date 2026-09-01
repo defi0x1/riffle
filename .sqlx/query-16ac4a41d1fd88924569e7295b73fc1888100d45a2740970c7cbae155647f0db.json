@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO regime_state (\n            pool_address, venue, timeframe, regime, since, pending, pending_since,\n            last_transition, updated_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        ON CONFLICT (pool_address, venue, timeframe) DO UPDATE SET\n            regime          = EXCLUDED.regime,\n            since           = EXCLUDED.since,\n            pending         = EXCLUDED.pending,\n            pending_since   = EXCLUDED.pending_since,\n            last_transition = EXCLUDED.last_transition,\n            updated_at      = EXCLUDED.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "16ac4a41d1fd88924569e7295b73fc1888100d45a2740970c7cbae155647f0db"
+}

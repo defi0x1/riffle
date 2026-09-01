@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT regime, since, pending, pending_since, last_transition\n        FROM regime_state\n        WHERE pool_address = $1 AND venue = $2 AND timeframe = $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "regime",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "since",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "pending",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "pending_since",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_transition",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e8b10f37ccd3f0327ec9f4bd328f9da487bc5167efb67ef9b4c40b3b1c4c1a2a"
+}

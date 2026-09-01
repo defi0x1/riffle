@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            pool_address,\n            sum(volume_usd) AS volume_usd,\n            sum(volume_usd) FILTER (WHERE NOT swap_for_y) AS buy_volume_usd,\n            sum(volume_usd) FILTER (WHERE swap_for_y) AS sell_volume_usd,\n            sum(trade_fee_usd) AS trade_fee_usd,\n            sum(protocol_fee_usd) AS protocol_fee_usd,\n            count(*) AS swap_count,\n            count(DISTINCT signer) AS unique_traders,\n            (array_agg(end_price ORDER BY ts ASC))[1] AS price_open,\n            max(end_price) AS price_high,\n            min(end_price) AS price_low,\n            (array_agg(end_price ORDER BY ts DESC))[1] AS price_close\n        FROM swaps\n        WHERE pool_address = ANY($1) AND ts >= $2 AND ts < $3\n        GROUP BY pool_address\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "volume_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "buy_volume_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "sell_volume_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "trade_fee_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "protocol_fee_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "swap_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "unique_traders",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "price_open",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "price_high",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "price_low",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "price_close",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "35c4ede76298e4189dd68768b63e2e1a88d948fe3aa3786659c3be98357cabe6"
+}

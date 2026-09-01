@@ -1,0 +1,160 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            p.pool_address, p.venue, p.tier, p.token_x, p.token_y,\n            d.bin_step, d.base_factor, d.variable_fee_control,\n            p.protocol_share_bps, p.base_fee_bps, p.tvl_usd, p.status,\n            p.activation_point, p.created_at, p.first_liquidity_at, p.is_blacklisted,\n            tx.mint_authority AS x_mint_authority, tx.freeze_authority AS x_freeze_authority,\n            tx.top10_share AS x_top10_share, tx.top1_share AS x_top1_share,\n            ty.mint_authority AS y_mint_authority, ty.freeze_authority AS y_freeze_authority,\n            ty.top10_share AS y_top10_share, ty.top1_share AS y_top1_share\n        FROM pools p\n        JOIN dlmm_pool_params d ON d.pool_address = p.pool_address\n        LEFT JOIN tokens tx ON tx.mint = p.token_x\n        LEFT JOIN tokens ty ON ty.mint = p.token_y\n        WHERE p.venue = $1\n        ORDER BY p.pool_address\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "tier",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "token_x",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "token_y",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "bin_step",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "base_factor",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "variable_fee_control",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "protocol_share_bps",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "base_fee_bps",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "tvl_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "status",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 12,
+        "name": "activation_point",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "first_liquidity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "is_blacklisted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "x_mint_authority",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "x_freeze_authority",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "x_top10_share",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 19,
+        "name": "x_top1_share",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 20,
+        "name": "y_mint_authority",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "y_freeze_authority",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 22,
+        "name": "y_top10_share",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 23,
+        "name": "y_top1_share",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "7b2984e828934aa070ff03a8e5b55ad95c67185c462754e9f7f6c8dbe5fdab45"
+}

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO volatility_state (\n            pool_address, venue, timeframe, sigma_fast_variance, sigma_slow_variance,\n            first_observed_at, updated_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (pool_address, venue, timeframe) DO UPDATE SET\n            sigma_fast_variance = EXCLUDED.sigma_fast_variance,\n            sigma_slow_variance = EXCLUDED.sigma_slow_variance,\n            updated_at          = EXCLUDED.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Text",
+        "Float8",
+        "Float8",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "858b040fb9d95125712aa545e33d95a73baea68809c2aebc62bd0a357102167c"
+}

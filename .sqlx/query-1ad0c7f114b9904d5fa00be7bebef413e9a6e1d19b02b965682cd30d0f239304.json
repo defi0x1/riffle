@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, pool_address, venue, opened_at, entry_price, entry_active_bin,\n               lower_bin, upper_bin, size_usd, size_per_bin\n        FROM paper_positions\n        WHERE closed_at IS NULL\n        ORDER BY opened_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "opened_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "entry_price",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "entry_active_bin",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "lower_bin",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "upper_bin",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "size_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "size_per_bin",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "1ad0c7f114b9904d5fa00be7bebef413e9a6e1d19b02b965682cd30d0f239304"
+}

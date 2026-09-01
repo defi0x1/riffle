@@ -4,7 +4,30 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+common = { workspace = true }
 logger = { workspace = true }
+metrics = { workspace = true }
+source = { workspace = true }
+dlmm_decode = { workspace = true }
+dlmm_math = { workspace = true }
+storage = { workspace = true }
+
+solana-sdk = { workspace = true }
+
 clap = { workspace = true }
 eyre = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+sqlx = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+
+tracing = { workspace = true }
+humantime = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

@@ -21,3 +21,21 @@ pub use ingest_health::*;
 
 mod reconciliation;
 pub use reconciliation::*;
+
+mod pipeline_state;
+pub use pipeline_state::*;
+
+mod scoring_universe;
+pub use scoring_universe::*;
+
+mod pool_metrics_history;
+pub use pool_metrics_history::*;
+
+mod indicator_history;
+pub use indicator_history::*;
+
+mod rollup_source;
+pub use rollup_source::*;
+
+mod paper_position_lifecycle;
+pub use paper_position_lifecycle::*;

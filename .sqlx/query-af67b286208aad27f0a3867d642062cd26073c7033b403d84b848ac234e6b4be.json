@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT bucket_start, r_org, vol_tvl\n        FROM indicators_4h\n        WHERE pool_address = $1 AND bucket_start >= $2\n        ORDER BY bucket_start ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "r_org",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "vol_tvl",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "af67b286208aad27f0a3867d642062cd26073c7033b403d84b848ac234e6b4be"
+}
