@@ -1,0 +1,32 @@
+# Example config for `indexer`. Copy to config/indexer.yaml (gitignored) and edit.
+# Every field here can also be set as a CLI flag or an env var of the same name.
+
+log:
+  level: info
+  format: pretty
+
+postgres:
+  url: ${DATABASE_URL}
+
+metrics:
+  listen_addr: 0.0.0.0:9101
+
+# Selects which source backend feeds the indexer. Both write the same schema.
+source:
+  backend: rpc # or: geyser
+  rpc:
+    url: ${RPC_URL}
+    poll_interval_state_ms: 15000
+    poll_interval_universe_s: 600
+    datapi_url: https://dlmm.datapi.meteora.ag
+  geyser:
+    endpoint: ${GEYSER_ENDPOINT}
+    x_token: ${GEYSER_TOKEN}
+    commitment: confirmed
+
+# Tier-1 (watched) pool set. Re-evaluated on promotion_interval against rolling
+# tier-0 metrics; exploration_slice keeps a fraction of slots open to unmeasured pools.
+tier:
+  max_watched: 100
+  promotion_interval_s: 300
+  exploration_slice: 0.10
