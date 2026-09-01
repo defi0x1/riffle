@@ -1,33 +1,103 @@
-# Example config for `indexer`. Copy to config/indexer.yaml (gitignored) and edit.
-# Every field here can also be set as a CLI flag or an env var of the same name.
+# Example configuration surface for `indexer`.
+#
+# No binary in this workspace parses YAML -- this file is not read by `indexer` itself.
+# Every setting below is both a CLI flag (kebab-case, e.g. `--rpc-url`) and an environment
+# variable of the same name (SCREAMING_SNAKE_CASE, e.g. RPC_URL); flattened clap groups do
+# not add a prefix, so the keys here are flat on purpose, not a lookup path. To actually use
+# a value, export it into the environment before running the binary (or pass it as a flag);
+# there is no `--config` flag. `docs/configuration.md` and `cargo run --bin indexer -- --help`
+# are the authoritative references -- this file exists so a value and a one-line reason for
+# it are in one place for local development.
+#
+# Quickstart: `docker compose up -d` gives you the Postgres instance `database_url` below
+# already points at. `rpc_url` has no safe default (every provider embeds a key in it) --
+# fill that in yourself before running.
 
-log:
-  level: info
-  format: pretty
+# ---- logging ----
+# EnvFilter syntax (e.g. "info", "debug", "warn,sqlx=info"). A bad value fails at startup,
+# not silently.
+log_level: info
+# compact | full | json | pretty. Built-in default is `compact`; `pretty` reads better in a
+# local terminal. Use `json` when shipping logs somewhere that parses them.
+log_format: pretty
 
-postgres:
-  url: ${DATABASE_URL}
+# ---- postgres ----
+# Matches the credentials `compose.yaml` creates. Never commit a real one -- this file is
+# tracked, `config/*.yaml` (without `.example`) is gitignored for the real value.
+database_url: postgres://feefarm:feefarm@localhost:5432/feefarm
+# Connection pool size. Indexer, scorer and bot each open their own pool against the same
+# Postgres instance -- see docs/operations.md if you raise this on more than one binary.
+max_connections: 10
 
-metrics:
-  # Always binds 0.0.0.0:<metrics_port> -- there is no separate bind-address override.
-  metrics_port: 9101
+# ---- metrics ----
+# Always binds 0.0.0.0:<metrics_port>; there is no separate bind-address override.
+disable_metrics_server: false
+# observability/prometheus/prometheus.yml scrapes 9101 for indexer, 9102 for scorer, 9103
+# for bot. Change this if you run more than one of these binaries on the same host.
+metrics_port: 9101
 
-# Selects which source backend feeds the indexer. Both write the same schema.
-source:
-  backend: rpc # or: geyser
-  rpc:
-    url: ${RPC_URL}
-    poll_interval_state_ms: 15000
-    poll_interval_universe_s: 600
-    datapi_url: https://dlmm.datapi.meteora.ag
-  geyser:
-    endpoint: ${GEYSER_ENDPOINT}
-    x_token: ${GEYSER_TOKEN}
-    commitment: confirmed
+# ---- source backend ----
+# Selects the whole ingestion implementation: rpc (polling, works today) or geyser
+# (streaming, needs a paid provider). Both write the same schema.
+backend: rpc
+# REQUIRED -- Solana RPC endpoint; most providers embed an API key in the URL. clap
+# declares this required regardless of `backend`, so set it even when running geyser.
+rpc_url: "https://your-rpc-provider.example/YOUR_API_KEY"
+# Poll cadence for tier-1 (watched) pool + bin state over RPC. Below ~10s the marginal
+# benefit is small relative to the added RPC cost.
+poll_interval_state: 15s
+# Cadence of the full getProgramAccounts universe scan -- the only place gPA is called.
+# Keep this well above your provider's gPA rate limit.
+poll_interval_universe: 600s
+# Meteora's public data API, the source of tier-0 flow metrics (volume/fees/TVL) on the rpc
+# backend.
+datapi_url: https://dlmm.datapi.meteora.ag
+# Page size for datapi /pools requests; 500 is the largest observed to work.
+datapi_page_size: 500
+# How long a "pool not present in datapi" result is cached before re-checking.
+negative_cache_ttl: 30s
+# Cap on outbound RPC calls in flight at once.
+max_concurrent_rpc: 8
+# Retry ceiling per failed RPC/datapi call before the tick gives up and logs an error.
+max_retries: 5
+# REQUIRED only when backend is geyser -- Yellowstone gRPC endpoint. Leave the placeholder
+# if you are running backend: rpc; it is unused but still parsed.
+geyser_endpoint: "https://your-geyser-provider.example:10000"
+# REQUIRED only when backend is geyser -- bearer token for the gRPC stream. Note the real
+# field/flag/env name is geyser_x_token (GEYSER_X_TOKEN), not geyser_token.
+geyser_x_token: "YOUR_GEYSER_X_TOKEN"
+# Commitment level for the Geyser subscription. Rejected at startup if not a recognised
+# commitment string.
+geyser_commitment: confirmed
 
-# Tier-1 (watched) pool set. Re-evaluated on promotion_interval against rolling
-# tier-0 metrics; exploration_slice keeps a fraction of slots open to unmeasured pools.
-tier:
-  max_watched: 100
-  promotion_interval_s: 300
-  exploration_slice: 0.10
+# ---- tier (screen/rank split; see docs/architecture.md) ----
+# Size of the tier-1 (measured) pool set.
+max_watched: 100
+# How often tier membership is re-evaluated against the screening rank.
+promotion_interval: 300s
+# Share of watch-set slots reserved for never-measured pools, so a weak screening prior can
+# never permanently hide a pool from promotion. 0.0 would remove that guarantee.
+exploration_slice: 0.10
+# Extra rank slots below the cutoff a watched pool may fall into before it is demoted
+# (hysteresis, avoids flapping). 0 demotes on the first slip below the strict cutoff.
+demotion_margin: 20
+
+# ---- discovery and flush cadence (top-level Args, no group) ----
+# Interval between full-universe pool discovery sweeps.
+discovery_interval: 600s
+# Newly discovered pools fully onboarded (full account fetch, row created) per discovery
+# tick -- bounds the RPC burst on a cold start against an existing large universe.
+discovery_batch_size: 200
+# How often buffered pool/bin state is flushed to Postgres, independent of batch size.
+state_flush_interval: 10s
+# Buffered state updates that force an immediate flush before the timer fires.
+state_flush_batch_size: 50
+# How often buffered chain events are flushed to Postgres, independent of batch size.
+event_flush_interval: 5s
+# Buffered chain events that force an immediate flush before the timer fires.
+event_flush_batch_size: 200
+# How often an ingest_health row is written and the Prometheus gauges refresh.
+health_interval: 30s
+# Data older than this no longer counts as "fresh" for the heartbeat log line. Too low trips
+# a false-stale reading on a backend with normal latency; too high delays real detection.
+health_freshness_threshold: 60s

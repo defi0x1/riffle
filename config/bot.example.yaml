@@ -1,17 +1,49 @@
-# Example config for `bot`. Copy to config/bot.yaml (gitignored) and edit.
-# Every field here can also be set as a CLI flag or an env var of the same name.
+# Example configuration surface for `bot`.
+#
+# No binary in this workspace parses YAML -- this file is not read by `bot` itself. Every
+# setting below is both a CLI flag (kebab-case, e.g. `--bot-token`) and an environment
+# variable of the same name (SCREAMING_SNAKE_CASE, e.g. BOT_TOKEN); flattened clap groups do
+# not add a prefix (`#[group(id = "telegram")]` only affects how `--help` groups the
+# arguments), so the keys here are flat on purpose, not a lookup path. To actually use a
+# value, export it into the environment before running the binary (or pass it as a flag);
+# there is no `--config` flag. `docs/configuration.md` and `cargo run --bin bot -- --help`
+# are the authoritative references.
+#
+# Quickstart: `docker compose up -d` gives you the Postgres instance `database_url` below
+# already points at. `bot_token` and `allowed_chats` have no safe default -- fill those in
+# yourself before running.
 
-log:
-  level: info
-  format: pretty
+# ---- logging ----
+# EnvFilter syntax (e.g. "info", "debug", "warn,sqlx=info"). A bad value fails at startup,
+# not silently.
+log_level: info
+# compact | full | json | pretty. Built-in default is `compact`; `pretty` reads better in a
+# local terminal.
+log_format: pretty
 
-postgres:
-  url: ${DATABASE_URL}
+# ---- postgres ----
+# Matches the credentials `compose.yaml` creates. Never commit a real one -- this file is
+# tracked, `config/*.yaml` (without `.example`) is gitignored for the real value.
+database_url: postgres://feefarm:feefarm@localhost:5432/feefarm
+# Connection pool size.
+max_connections: 10
 
-metrics:
-  # Always binds 0.0.0.0:<metrics_port> -- there is no separate bind-address override.
-  metrics_port: 9103
+# ---- metrics ----
+# Always binds 0.0.0.0:<metrics_port>; there is no separate bind-address override. Note
+# that bot registers no collectors of its own -- this endpoint returns an (almost) empty
+# body, which is expected, not a misconfiguration.
+disable_metrics_server: false
+# observability/prometheus/prometheus.yml scrapes 9101 for indexer, 9102 for scorer, 9103
+# for bot. Change this if you run more than one of these binaries on the same host.
+metrics_port: 9103
 
-telegram:
-  bot_token: ${TELEGRAM_BOT_TOKEN}
-  allowed_chats: [123456789, -987654321]
+# ---- telegram ----
+# REQUIRED -- bot token from @BotFather. Never logged (Display for this struct is written by
+# hand to redact it); never commit a real one.
+bot_token: "000000000:YOUR_BOTFATHER_TOKEN"
+# REQUIRED -- comma-separated chat IDs allowed to use the bot (negative IDs are
+# groups/channels); every other chat gets a refusal and nothing else. An empty string is
+# accepted by clap but answers no one -- not a startup failure, a silent no-op.
+allowed_chats: "123456789,-987654321"
+# Rows rendered per ranking command before the message paginates.
+max_rows: 10

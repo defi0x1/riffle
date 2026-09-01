@@ -1,19 +1,226 @@
-# Example config for `scorer`. Copy to config/scorer.yaml (gitignored) and edit.
-# Every field here can also be set as a CLI flag or an env var of the same name.
+# Example configuration surface for `scorer`.
+#
+# No binary in this workspace parses YAML -- this file is not read by `scorer` itself.
+# Every setting below is both a CLI flag (kebab-case, e.g. `--rollup-interval`) and an
+# environment variable of the same name (SCREAMING_SNAKE_CASE, e.g. ROLLUP_INTERVAL);
+# flattened clap groups do not add a prefix, so the keys here are flat on purpose, not a
+# lookup path. To actually use a value, export it into the environment before running the
+# binary (or pass it as a flag); there is no `--config` flag. `docs/configuration.md` and
+# `cargo run --bin scorer -- --help` are the authoritative references.
+#
+# Quickstart: `docker compose up -d` gives you the Postgres instance `database_url` below
+# already points at; scorer needs nothing else external to start (no RPC, no Geyser).
+#
+# The `engine.*` and `pipeline_defaults.*` sections below (comments only, keys are flat)
+# are neutral placeholders, not calibrated values -- every struct they come from says so in
+# its own doc comment. Changing one changes which pools clear the risk gate and the
+# attractiveness/sizing/exit thresholds; it does not change the pipeline's logic.
 
-log:
-  level: info
-  format: pretty
+# ---- logging ----
+# EnvFilter syntax (e.g. "info", "debug", "warn,sqlx=info"). A bad value fails at startup,
+# not silently.
+log_level: info
+# compact | full | json | pretty. Built-in default is `compact`; `pretty` reads better in a
+# local terminal.
+log_format: pretty
 
-postgres:
-  url: ${DATABASE_URL}
+# ---- postgres ----
+# Matches the credentials `compose.yaml` creates. Never commit a real one -- this file is
+# tracked, `config/*.yaml` (without `.example`) is gitignored for the real value.
+database_url: postgres://feefarm:feefarm@localhost:5432/feefarm
+# Connection pool size.
+max_connections: 10
 
-metrics:
-  # Always binds 0.0.0.0:<metrics_port> -- there is no separate bind-address override.
-  metrics_port: 9102
+# ---- metrics ----
+# Always binds 0.0.0.0:<metrics_port>; there is no separate bind-address override. Scorer
+# registers no collectors of its own -- this endpoint returns an (almost) empty body, which
+# is expected. Scorer's own operational state is surfaced through the Grafana dashboard's
+# direct Postgres queries instead.
+disable_metrics_server: false
+# observability/prometheus/prometheus.yml scrapes 9101 for indexer, 9102 for scorer, 9103
+# for bot. Change this if you run more than one of these binaries on the same host.
+metrics_port: 9102
 
-# Worker tick intervals.
-tick:
-  indicators_s: 300
-  risk_gate_s: 300
-  outcomes_s: 3600
+# ==== tick: worker cadence ====
+# How often the rollup worker builds a pool_metrics_5m/pool_metrics_10m bucket. Must stay
+# in step with the 5-minute bucket width baked into the rollup worker's own bucket-flooring
+# logic -- changing this changes how often a (possibly incomplete) bucket is rebuilt, not
+# the bucket width itself.
+rollup_interval: 5m
+# How often the universe is screened and the watch set ranked.
+indicators_interval: 5m
+# How often trigger (exit) conditions are re-evaluated.
+signals_interval: 5m
+# Minimum gap before a persistent signal condition is re-announced. 0 would re-announce
+# every tick a condition still holds.
+signal_cooldown: 1h
+# How often open paper positions are marked against real fee accrual.
+paper_position_mark_interval: 5m
+# How often the outcomes worker checks for positions whose horizon has come due.
+outcomes_interval: 15m
+
+# ==== pipeline_defaults: inputs the engine needs but does not calibrate itself ====
+# No calibrated value ships with this repo; these are neutral placeholders, the same
+# convention engine's own config groups use.
+# Fee-clustering multiplier feeding the endogenous fee forecast. Miscalibrated, the
+# forecast fee is systematically over- or under-stated, which propagates into every
+# ranking/sizing decision downstream.
+kappa_c: 3.0
+# Decay window (seconds) feeding the forecast-fee volatility term.
+decay_window_secs: 600.0
+# Organic-flow shrinkage prior mean, until per-class priors are estimated.
+organic_class_prior_mu: 0.6
+# Organic-flow shrinkage prior variance, until per-class priors are estimated.
+organic_class_prior_tau_sq: 0.05
+# Capital assumed available to the current regime bucket for sizing. No portfolio ledger
+# exists yet -- this is a flat placeholder, not a tracked balance.
+regime_capital: 1000000.0
+# Capital assumed uncommitted to other positions, for sizing.
+free_capital: 200000.0
+# Expected fee return feeding the quarter-Kelly sizing input.
+mu_fee: 0.001
+# Expected adverse-selection cost feeding the quarter-Kelly sizing input.
+mu_arb: 0.0002
+
+# ==== engine.regime: hysteresis and the S/V1/V2 boundary conditions ====
+# Time a candidate regime must persist before the classifier commits to it. Without this
+# the classifier oscillates on noise.
+persistence: 30m
+# Minimum time between committed regime flips, regardless of direction (bypassed by the
+# kill switch).
+cooldown: 2h
+# S-enter: sigma_slow ceiling (fraction).
+s_enter_sigma_slow_max: 0.005
+# S-enter: peg deviation ceiling (fraction).
+s_enter_dev_peg_max: 0.003
+# S-exit: sigma_fast floor.
+s_exit_sigma_fast_min: 0.01
+# S-exit: peg deviation floor.
+s_exit_dev_peg_min: 0.005
+# V2-enter: sigma_slow floor.
+v2_enter_sigma_slow_min: 0.08
+# V2-enter: age ceiling in days.
+v2_enter_age_max_days: 30.0
+# V2-exit: sigma_slow ceiling.
+v2_exit_sigma_slow_max: 0.05
+# V2-exit: age floor in days.
+v2_exit_age_min_days: 30.0
+
+# ==== engine.risk_gate: runs before any attractiveness metric; a failing pool is not
+#      scored at all ====
+# Top-10 holder share ceiling (when holder data is available).
+top10_holder_share_max: 0.35
+# Single-wallet holder share ceiling.
+top1_holder_share_max: 0.15
+# Token-2022 transfer-fee ceiling, in bps.
+transfer_fee_bps_max: 100
+# Minimum depth on another venue/CEX relative to DLMM depth.
+other_venue_min_depth_ratio: 0.20
+# A base-fee change inside this window fails the creator-behaviour check.
+creator_fee_change_window: 7d
+# Ceiling on 24h volume share from the top wash-screen signers.
+wash_signer_volume_share_max: 0.40
+# Number of signers the wash-screen volume share is measured over.
+wash_signer_count: 5
+# Round-trip volume ratio ceiling.
+wash_round_trip_ratio_max: 0.30
+# Minimum pool age for V2, since first liquidity.
+v2_min_age: 72h
+
+# ==== engine.organic_flow ====
+# Assumed sample variance of the observed organic share, sizing the shrinkage weight until
+# a class's own dispersion is estimated.
+default_sample_variance: 0.05
+
+# ==== engine.ranking: the attractiveness gate, one value per regime unless noted
+#      (suffix _s = Stable, _v1 = established volatile, _v2 = young/volatile) ====
+# Minimum R (fee-over-risk ratio) to be considered attractive. Sits above the derived
+# breakeven by design -- a model-error budget, not the breakeven itself.
+r_min_s: 1.5
+r_min_v1: 2.0
+r_min_v2: 3.0
+# Minimum 24h volume / TVL ratio.
+vol_tvl_min_s: 1.0
+vol_tvl_min_v1: 1.5
+vol_tvl_min_v2: 4.0
+# Minimum organic-flow fraction. Documented as "locked, not tuned" in source.
+phi_org_min_s: 0.50
+phi_org_min_v1: 0.40
+phi_org_min_v2: 0.50
+# Minimum annualised fee yield (fraction).
+y_fee_annual_min_s: 0.08
+y_fee_annual_min_v1: 0.25
+y_fee_annual_min_v2: 1.50
+# Minimum TVL, USD.
+tvl_min_s: 1000000.0
+tvl_min_v1: 500000.0
+tvl_min_v2: 150000.0
+# Minimum 24h volume, USD.
+vol24h_min_s: 2000000.0
+vol24h_min_v1: 1000000.0
+vol24h_min_v2: 500000.0
+# S/V1: week-over-week volume trend floor (fraction, negative).
+volume_trend_min_wk_wk: -0.50
+# V2, age < 7d: 24h volume as a fraction of the trailing 72h average.
+volume_trend_min_v2_young: 0.35
+# V2, age >= 7d: same ratio, higher bar.
+volume_trend_min_v2_mature: 0.50
+# JIT-liquidity haircut applied inside R_org.
+h_jit_s: 0.05
+h_jit_v1: 0.10
+h_jit_v2: 0.15
+# Annual hurdle sizing the ranking key's dilution-adjusted position cap.
+ranking_key_hurdle_annual: 0.20
+# Multi-window consistency filter: the minimum of the 1h/24h/7d fee/TVL windows must reach
+# this fraction of the 24h window.
+consistency_min_ratio: 0.5
+
+# ==== engine.sizing: position-share, TVL-share and capital-at-risk caps per regime ====
+# Position-share-of-active-liquidity cap.
+theta_max_s: 0.15
+theta_max_v1: 0.10
+theta_max_v2: 0.08
+# Position-share-of-TVL cap.
+pi_max_s: 0.10
+pi_max_v1: 0.05
+pi_max_v2: 0.03
+# Capital-at-risk fraction cap.
+car_fraction_s: 0.40
+car_fraction_v1: 0.20
+car_fraction_v2: 0.10
+# Minimum position size, USD, below which a pool is skipped entirely.
+v_min_s: 5000.0
+v_min_v1: 3000.0
+v_min_v2: 1000.0
+# Annual hurdle used to compute the self-dilution cap.
+annual_hurdle: 0.20
+# Position count N for Spot sizing (V = N * m).
+position_count: 5
+
+# ==== engine.triggers: exit conditions, each a persistence-window lookback rather than a
+#      stateful accumulator ====
+# R_org exit threshold and how long it must hold below threshold before it fires.
+r_org_exit_s: 1.0
+r_org_exit_persistence_s: 24h
+r_org_exit_v1: 1.5
+r_org_exit_persistence_v1: 6h
+r_org_exit_v2: 2.0
+r_org_exit_persistence_v2: 3h
+# Volume/TVL exit threshold and persistence.
+vol_tvl_exit_s: 0.5
+vol_tvl_exit_persistence_s: 48h
+vol_tvl_exit_v1: 0.75
+vol_tvl_exit_persistence_v1: 12h
+vol_tvl_exit_v2: 2.0
+vol_tvl_exit_persistence_v2: 6h
+# S: week-over-week volume-decay exit floor.
+volume_decay_wk_wk_min: -0.50
+# V1: 24h/trailing-72h-average volume floor.
+volume_decay_v1_min: 0.40
+# V2, age < 7d: same ratio.
+volume_decay_v2_young_min: 0.35
+# V2, age >= 7d: same ratio, higher bar.
+volume_decay_v2_mature_min: 0.50
+# A fee-parameter jump at or above this multiplier is an instant kill, no persistence
+# window.
+fee_jack_kill_multiplier: 2.0
