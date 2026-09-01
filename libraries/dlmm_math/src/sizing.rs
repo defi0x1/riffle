@@ -1,9 +1,9 @@
-/// F17: self-dilution cap — the position size at which marginal fee yield falls to the
+/// the self-dilution cap: self-dilution cap — the position size at which marginal fee yield falls to the
 /// daily hurdle `h`.
 ///
 /// # Formula
 ///
-/// * `m* = L̄_a · (√((1−ps)·f·τ_a / h) − 1)`, `h` = annual hurdle / 365 (F17)
+/// * `m* = L̄_a · (√((1−ps)·f·τ_a / h) − 1)`, `h` = annual hurdle / 365
 pub fn self_dilution_cap(
     active_bin_liquidity: f64,
     protocol_share: f64,
@@ -31,9 +31,9 @@ pub fn car_cap(regime_capital: f64, fraction: f64) -> f64 {
     fraction * regime_capital
 }
 
-/// F18: quarter-Kelly fee-farming fraction, evaluated at the robust `σ_hi = 1.3·σ̂` (the
-/// ~30% volatility estimation error, plans/04 §7). The ¼ multiplier is a deliberate
-/// haircut, not an estimate of correct leverage (F18 note).
+/// Kelly: quarter-Kelly fee-farming fraction, evaluated at the robust `σ_hi = 1.3·σ̂` (the
+/// ~30% volatility estimation error,). The ¼ multiplier is a deliberate
+/// haircut, not an estimate of correct leverage (Kelly note).
 ///
 /// # Formula
 ///
@@ -45,7 +45,7 @@ pub fn quarter_kelly(mu_fee: f64, mu_arb: f64, sigma_hat: f64) -> f64 {
     f_star / 4.0
 }
 
-/// F17/F18 composition (plans/04 §7): the position size is the minimum of every
+/// the self-dilution cap/Kelly composition: the position size is the minimum of every
 /// applicable cap; the pool is skipped entirely if that minimum falls below `v_min`.
 pub fn position_size(caps: &[f64], v_min: f64) -> Option<f64> {
     let v = caps.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_share_cap_matches_worked_example_a() {
-        // 10-worked-examples.md A.1: N*m_share = 5*0.15*800k = $600k -> per-bin m_share = $120k.
+        // worked example A: N*m_share = 5*0.15*800k = $600k -> per-bin m_share = $120k.
         let m_share = share_cap(800_000.0, 0.15);
         assert!((m_share - 120_000.0).abs() < 1e-6);
         assert!((5.0 * m_share - 600_000.0).abs() < 1e-6);
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_position_size_matches_worked_example_a() {
-        // 10-worked-examples.md A.5: caps 600k/500k/80k, bucket free 50k -> V* = $50,000.
+        // worked example A5: caps 600k/500k/80k, bucket free 50k -> V* = $50,000.
         let v = position_size(&[600_000.0, 500_000.0, 80_000.0, 50_000.0], 5_000.0);
         assert_eq!(v, Some(50_000.0));
     }

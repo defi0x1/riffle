@@ -28,7 +28,7 @@ fn pair_with_params(
     }
 }
 
-/// Base fee rate as a fraction: F3, `f_b = base_factor · s_bps · 10 · 10^pf / 1e9`.
+/// Base fee rate as a fraction: the base fee, `f_b = base_factor · s_bps · 10 · 10^pf / 1e9`.
 ///
 /// Delegates to `lb_clmm`'s own `LbPair::calculate_base_fee`.
 pub fn base_fee_rate(
@@ -41,8 +41,8 @@ pub fn base_fee_rate(
     Ok(raw as f64 / FEE_PRECISION)
 }
 
-/// Variable fee rate as a fraction for a given (integer) volatility accumulator: F5.
-/// `volatility_accumulator` is `lb_clmm`'s own unit (10,000 per bin crossed, F4).
+/// Variable fee rate as a fraction for a given (integer) volatility accumulator: the variable fee.
+/// `volatility_accumulator` is `lb_clmm`'s own unit (10,000 per bin crossed, the volatility accumulator).
 ///
 /// Delegates to `lb_clmm`'s own fee pipeline by constructing the minimal `LbPair` state
 /// the computation reads (`bin_step`, `variable_fee_control`, `volatility_accumulator`)
@@ -64,7 +64,7 @@ pub fn variable_fee_rate(
     Ok(raw as f64 / FEE_PRECISION)
 }
 
-/// F15: endogenous forecast fee `f̂` — the fee rate implied by a *forecast* volatility,
+/// the forecast fee: endogenous forecast fee `f̂` — the fee rate implied by a *forecast* volatility,
 /// not the live on-chain accumulator. Our own forecast layered on `lb_clmm`'s exact
 /// integer fee pipeline: we convert the forecast into an equivalent volatility
 /// accumulator (`va = 10,000·k`) and let the program's own arithmetic do the rest, so
@@ -73,7 +73,7 @@ pub fn variable_fee_rate(
 /// # Formula
 ///
 /// * `f̂ = min(f_b + f_v̂, 10%)`, `f_v̂ = vfc · E[k²] · s_bps² / 1e12`,
-///   `E[k²] ≈ (σ_D/s)² · κ_c` (F15)
+///   `E[k²] ≈ (σ_D/s)² · κ_c`
 pub fn endogenous_fee_rate(
     bin_step_bps: u16,
     base_factor: u16,
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_base_fee_rate_matches_bin_step_when_base_factor_is_10000() {
-        // 00 §0.5 / plans/04 F3 note: base_factor 10,000 -> base fee in bps == bin step in bps.
+        // 00 / the base fee note: base_factor 10,000 -> base fee in bps == bin step in bps.
         let f_b = base_fee_rate(1, 10_000, 0).unwrap();
         assert!((f_b - 0.0001).abs() < 1e-12);
 
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_endogenous_fee_rate_matches_worked_example_b_variable_component() {
-        // Worked example B (10-worked-examples.md B.1): vfc = 40,000, s = 100 bps,
+        // Worked example B (worked example B): vfc = 40,000, s = 100 bps,
         // sigma_D = 150 bps, kappa_c = 3 -> f_v = 27 bp exactly:
         // E[k^2] = (150/100)^2 * 3 = 6.75; f_v = 40000 * 6.75 * 100^2 / 1e12 = 0.0027.
         let f_hat = endogenous_fee_rate(100, 0, 0, 40_000, 150.0, 3.0).unwrap();

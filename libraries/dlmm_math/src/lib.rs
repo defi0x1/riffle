@@ -1,8 +1,9 @@
-//! Pure quantitative maths for DLMM: bin pricing, fees, volatility estimators, LVR/IL,
-//! the ranking metric and sizing. No I/O. Delegates to `lb_clmm` (public program source)
-//! wherever it has the relevant integer math, so results are bit-exact with the program
-//! by construction; formulas that are our own derivation are cited by `F` number against
-//! `00-shared-parameters.md §0.3` and `plans/04-indicators.md`.
+//! Pure quantitative maths for DLMM: bin pricing, fees, volatility estimators, LVR and
+//! impermanent loss, the ranking metric, and sizing. No I/O.
+//!
+//! Anything the program computes on-chain is delegated to `lb_clmm` rather than
+//! reimplemented, so those results are bit-exact with it by construction. The rest —
+//! volatility estimation, the organic-flow blend, sizing — is ours.
 
 mod error;
 pub use error::*;

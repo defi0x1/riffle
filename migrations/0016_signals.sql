@@ -1,5 +1,5 @@
 -- Part of the derived layer's evidence base -- retained indefinitely, never
--- dropped (plans/03 §6). A plain table, not a hypertable: TimescaleDB
+-- dropped. A plain table, not a hypertable: TimescaleDB
 -- requires any unique index on a hypertable to include the partitioning
 -- column, and a bare UUID primary key referenced by rationale (0017) is
 -- worth more here than compression on a table whose volume is episodic

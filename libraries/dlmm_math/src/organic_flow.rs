@@ -1,12 +1,12 @@
-/// F11: mechanical toxic-volume estimator, needing no swap-level data (available from
-/// day 1 on a cold pool). `c_fill` is the calibration constant ([A-02-3]: 0.5 for V1/V2,
+/// the mechanical estimator: mechanical toxic-volume estimator, needing no swap-level data (available from
+/// day 1 on a cold pool). `c_fill` is the calibration constant: 0.5 for V1/V2,
 /// 0.75 for S).
 ///
 /// # Formula
 ///
 /// * crossings/day `≈ σ_d² / s²`
 /// * `Vol_toxic^mech ≈ (σ_d²/s²) · L̄_a · c_fill`
-/// * `phi_mech = clip(1 − Vol_toxic^mech / Vol_24h, 0, 1)` (F11)
+/// * `phi_mech = clip(1 − Vol_toxic^mech / Vol_24h, 0, 1)`
 pub fn phi_mech(
     sigma_d: f64,
     bin_step: f64,
@@ -22,7 +22,7 @@ pub fn phi_mech(
     (1.0 - vol_toxic / vol_24h).clamp(0.0, 1.0)
 }
 
-/// Two-component exponential mixture over trade sizes, fit by EM (plans/04 §4.3: "Two-
+/// Two-component exponential mixture over trade sizes, fit by EM ("Two-
 /// component mixture fit on trade sizes"). Arb flow clusters near the one-bin size, so
 /// the *low-mean* component is organic; returns its weight, or `None` if there are too
 /// few observations to fit.
@@ -79,8 +79,8 @@ pub fn phi_size(trade_sizes: &[f64]) -> Option<f64> {
     }
 }
 
-/// Blend of the three organic-flow estimators (plans/04 §4.4). `phi_time` is `None` on
-/// the ingestion backend that has no swap-level data (`Source::capabilities().swap_level_events`
+/// Blend of the three organic-flow estimators. `phi_time` is `None` on
+/// the ingestion backend that has no swap-level data (`Source::capabilities.swap_level_events`
 /// gates it upstream); `n_trades` is then naturally 0 and the blend collapses to the
 /// mech/size combination — the spec's own defined degradation, not an improvisation.
 ///
@@ -98,7 +98,7 @@ pub fn phi_org_blend(phi_time: Option<f64>, n_trades: u32, phi_mech: f64, phi_si
 }
 
 /// Empirical-Bayes shrinkage of the observed organic share toward its class prior
-/// (plans/04 §4.4): a pool with few classified trades is pulled toward `mu_c` rather
+///: a pool with few classified trades is pulled toward `mu_c` rather
 /// than trusted outright. `n = 0` returns the prior unchanged.
 ///
 /// # Formula
@@ -119,14 +119,14 @@ mod tests {
 
     #[test]
     fn test_phi_mech_matches_worked_example_a() {
-        // 10-worked-examples.md A.1 / 00 §0.6: sigma_d=2bp, s=1bp, L_a=800k, c_fill=0.75 (S), Vol_24h=25M.
+        // worked example A / 00: sigma_d=2bp, s=1bp, L_a=800k, c_fill=0.75 (S), Vol_24h=25M.
         let phi = phi_mech(2e-4, 1e-4, 800_000.0, 0.75, 25_000_000.0);
         assert!((phi - 0.904).abs() < 1e-3, "got {phi}");
     }
 
     #[test]
     fn test_phi_mech_matches_worked_example_b() {
-        // 10-worked-examples.md B.1: sigma_slow=18%, s=100bp, L_a=12k, c_fill=0.5 (V2), Vol_24h=4.5M.
+        // worked example B: sigma_slow=18%, s=100bp, L_a=12k, c_fill=0.5 (V2), Vol_24h=4.5M.
         let phi = phi_mech(0.18, 0.01, 12_000.0, 0.5, 4_500_000.0);
         assert!((phi - 0.568).abs() < 1e-3, "got {phi}");
     }
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_phi_org_blend_matches_worked_example_a() {
-        // 10-worked-examples.md A.1: time 0.88 / mech 0.90 / size 0.93, saturated w_time
+        // worked example A: time 0.88 / mech 0.90 / size 0.93, saturated w_time
         // (n_trades >= 200) -> blend 0.90.
         let phi = phi_org_blend(Some(0.88), 200, 0.90, 0.93);
         assert!((phi - 0.896).abs() < 1e-3, "got {phi}");
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_phi_org_blend_degrades_to_mech_size_when_time_unavailable() {
-        // 10-worked-examples.md B.1: "time n/a — no CEX; mech 0.57 / size 0.66" -> 0.61.
+        // worked example B: "time n/a — no CEX; mech 0.57 / size 0.66" -> 0.61.
         let phi = phi_org_blend(None, 0, 0.57, 0.66);
         assert!((phi - 0.606).abs() < 1e-3, "got {phi}");
     }

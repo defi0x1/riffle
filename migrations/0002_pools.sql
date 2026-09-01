@@ -1,7 +1,7 @@
 -- Class-table inheritance: `pools` carries what every venue has, a satellite
 -- table per venue carries what only that venue has. Adding a second venue is
 -- a new satellite table plus new `pools` rows with a different `venue` value
--- -- never an ALTER of a populated table. This is the one seam that is
+-- never an ALTER of a populated table. This is the one seam that is
 -- expensive to retrofit, so it is drawn on the first migration.
 
 CREATE TABLE pools (
@@ -47,7 +47,7 @@ CREATE INDEX idx_pools_venue_tier ON pools (venue, tier);
 CREATE INDEX idx_pools_tier_tvl ON pools (tier, tvl_usd DESC);
 
 -- DLMM-only parameters. StaticParameters plus the fields that drive the
--- dynamic fee (F5/F15). A second venue (e.g. DAMM v2) gets its own
+-- dynamic fee. A second venue (e.g. DAMM v2) gets its own
 -- `damm_pool_params` table later -- a pure CREATE TABLE.
 CREATE TABLE dlmm_pool_params (
     pool_address                TEXT PRIMARY KEY REFERENCES pools (pool_address),

@@ -1,14 +1,13 @@
--- Twin of 0007's active_bin_snapshots (plans/11 §2, correcting the single
--- `bin_states` table in the original data model). Full ~210-bin
--- distribution, written at a 5-minute cadence, for the two consumers that
--- need many bins but not high frequency:
+-- Twin of 0007's active_bin_snapshots. The full ~210-bin distribution,
+-- written at a 5-minute cadence, for the two consumers that need many
+-- bins but not high frequency:
 --   1. fee accrual: fee_*_per_token_stored is monotonically non-decreasing,
 --      so accrual between t0 and t1 is a difference of two endpoints --
 --      intermediate samples between two 5-minute polls carry no
 --      information, so 5-minute endpoints answer exactly what 15-second
 --      ones would.
 --   2. bin-map rendering / shape analysis.
---
+
 -- Application-level change detection (skip a bin whose
 -- (amount_x, amount_y, liquidity_supply, fee_x_per_token_stored,
 -- fee_y_per_token_stored) is unchanged since the last write) reduces this

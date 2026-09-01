@@ -4,4 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+dlmm_math = { workspace = true }
 eyre = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+humantime = { workspace = true }
+rust_decimal = { workspace = true }

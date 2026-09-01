@@ -8,7 +8,7 @@ mod tests {
     use crate::lvr::lvr_rate_spot;
     use crate::ranking::{Dlmm, PoolState, VolEstimate, r_org, r_ratio, y_fee};
 
-    /// Example A — stable regime, USDC-USDT, s = 1 bp (10-worked-examples.md §A.1).
+    /// Example A — stable regime, USDC-USDT, s = 1 bp (worked example A).
     #[test]
     fn test_example_a_r_org_e_fees_lvr() {
         let pool = PoolState {
@@ -28,7 +28,7 @@ mod tests {
         let phi_org = 0.90;
         let h_jit = 0.05; // S
 
-        // R_org (F14 organic form): published 12.0.
+        // R_org (the ranking metric organic form): published 12.0.
         let r = r_ratio(1.0e-4, 31.25, 0.0001, pool.protocol_share, vol.sigma_d);
         let org = r_org(r, phi_org, h_jit);
         assert!((org - 12.0).abs() < 0.05, "R_org: got {org}, want ~12.0");
@@ -41,7 +41,7 @@ mod tests {
             "R_org via Venue: got {org_via_trait}"
         );
 
-        // E[fees]: Y_fee at m* = $10k, active-bin capital, per day (00 §0.6 gives the
+        // E[fees]: Y_fee at m* = $10k, active-bin capital, per day (00 gives the
         // annualised 101% figure; per-day here is the same computation without *365).
         let y = y_fee(pool.protocol_share, 1.0e-4, 31.25, 0.0, 800_000.0, 10_000.0);
         let annualised = y * 365.0;
@@ -50,12 +50,12 @@ mod tests {
             "Y_fee annualised: got {annualised}"
         );
 
-        // LVR (F9): published $2.00/day at V=$50,000, w=2*5e-4.
+        // LVR: published $2.00/day at V=$50,000, w=2*5e-4.
         let lvr = lvr_rate_spot(2e-4, 50_000.0, 5e-4);
         assert!((lvr - 2.0).abs() < 1e-9, "LVR: got {lvr}");
     }
 
-    /// Example B — volatile regime (V2), MEME-SOL, s = 100 bp (10-worked-examples.md §B.1).
+    /// Example B — volatile regime (V2), MEME-SOL, s = 100 bp (worked example B).
     ///
     /// The spec is explicit that this example is a deliberately marginal case: under the
     /// post-merge rule (LM yield counts toward the `Y_fee` hurdle only, never toward
@@ -112,7 +112,7 @@ mod tests {
         );
         assert!((y - 3.4425).abs() < 1e-3, "Y_fee: got {y}");
 
-        // LVR (F9): published $810/day at V=$20,000, w = N*s = 40*0.01 = 0.4 (N=40 bins,
+        // LVR: published $810/day at V=$20,000, w = N*s = 40*0.01 = 0.4 (N=40 bins,
         // s=100bp), sigma_slow=18% (the LVR line uses the slow estimate; the R_gross line
         // above uses sigma_fast=15% -- the spec computes both and shows R at each).
         let lvr = lvr_rate_spot(0.18, 20_000.0, 0.4);

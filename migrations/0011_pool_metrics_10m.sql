@@ -1,4 +1,4 @@
--- Two base resolutions by tier (plans/11 §3, blocking correction R3).
+-- Two base resolutions by tier.
 -- Tier-1 pools have a genuine 5-minute base (0010) and this table is a
 -- rollup of it. Tier-0 pools on the RPC backend are observed once per
 -- 10-minute universe scan -- 10 minutes IS their native resolution, so this
@@ -7,7 +7,7 @@
 -- hypertable rather than a `timescaledb.continuous` view: a continuous
 -- aggregate's materialization is refresh-only and cannot mix rows written
 -- directly by the application with rows derived from its source.
---
+
 -- `native_resolution = true` marks a row written directly from a 10-minute
 -- scan (tier 0); `false` marks a row rolled up from four pool_metrics_5m
 -- buckets (tier 1). Downstream consumers use this to know whether a

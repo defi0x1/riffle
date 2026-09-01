@@ -1,19 +1,19 @@
-/// LVR rate for a Spot position (MMRZ, F9): loss versus rebalancing per unit time
+/// Loss-versus-rebalancing rate for a Spot position: the cost per unit time
 /// while in range; zero when out of range (caller's responsibility to gate on that).
 ///
 /// # Formula
 ///
-/// * `ℓ_spot = σ² V / (2w)`, `w = N·s` = range width as a fraction (F9)
+/// * `ℓ_spot = σ² V / (2w)`, `w = N·s` = range width as a fraction
 pub fn lvr_rate_spot(sigma: f64, position_value: f64, width: f64) -> f64 {
     sigma * sigma * position_value / (2.0 * width)
 }
 
 /// Impermanent loss vs HODL for a symmetric Spot position after a move `Δ`, `|Δ| ≤ W`
-/// (F10). At the edge (`Δ = W = w/2`) this reduces to `V·w/8`.
+///. At the edge (`Δ = W = w/2`) this reduces to `V·w/8`.
 ///
 /// # Formula
 ///
-/// * `IL(Δ) = V Δ² / (2w)` (F10)
+/// * `IL(Δ) = V Δ² / (2w)`
 pub fn il_spot(position_value: f64, delta: f64, width: f64) -> f64 {
     position_value * delta * delta / (2.0 * width)
 }
@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn test_lvr_rate_spot_matches_00_shared_parameters_example() {
-        // 00-shared-parameters.md §0.6: sigma_d = 2e-4, V = 50,000, w = 2*5e-4 -> $2.00/day.
+        // the shared parameters: sigma_d = 2e-4, V = 50,000, w = 2*5e-4 -> $2.00/day.
         let ell = lvr_rate_spot(2e-4, 50_000.0, 5e-4);
         assert!((ell - 2.0).abs() < 1e-9, "got {ell}");
     }

@@ -1,6 +1,6 @@
-/// EWMA half-life ~2 h (plans/04 §1: `sigma_fast`).
+/// EWMA half-life ~2 h (`sigma_fast`).
 pub const LAMBDA_FAST: f64 = 0.97;
-/// EWMA half-life ~1 day (plans/04 §1: `sigma_slow`).
+/// EWMA half-life ~1 day (`sigma_slow`).
 pub const LAMBDA_SLOW: f64 = 0.997;
 
 /// Garman-Klass variance for a single OHLC bar.
@@ -20,7 +20,7 @@ pub fn ewma_update(prev_variance: f64, new_observation_variance: f64, lambda: f6
 }
 
 /// Daily variance, variance-ratio corrected for bin-quantised autocorrelation, floored
-/// at half the naive value (`00 §0.4(ii)`, plans/04 §1).
+/// at half the naive value (`00(ii)`,).
 ///
 /// `autocorrelations` are `ρ_1..ρ_6` of the 5-minute return series; only the first six
 /// lags are used.
@@ -35,12 +35,12 @@ pub fn variance_ratio_corrected_daily_variance(sigma_5m_sq: f64, autocorrelation
     corrected.max(0.5 * naive)
 }
 
-/// `σ_d` from 5-minute bar variance, variance-ratio corrected (plans/04 §1).
+/// `σ_d` from 5-minute bar variance, variance-ratio corrected.
 pub fn daily_vol(sigma_5m_sq: f64, autocorrelations: &[f64]) -> f64 {
     variance_ratio_corrected_daily_variance(sigma_5m_sq, autocorrelations).sqrt()
 }
 
-/// `σ_D`, the decay-window vol that feeds F15, in bps: `σ_fast · √(decay_window/1 day)`.
+/// `σ_D`, the decay-window vol that feeds the forecast fee, in bps: `σ_fast · √(decay_window/1 day)`.
 pub fn decay_window_vol_bps(sigma_fast: f64, decay_window_secs: f64) -> f64 {
     sigma_fast * (decay_window_secs / 86_400.0).sqrt() * 10_000.0
 }
@@ -61,7 +61,7 @@ fn realized_variance(log_returns: &[f64]) -> f64 {
 }
 
 /// Jump share of trailing-24h realized variance, via bipower variation, floored at 0.05
-/// (plans/04 §1: `sigma_jump`).
+/// (`sigma_jump`).
 ///
 /// # Formula
 ///
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn test_decay_window_vol_bps_hand_checked() {
         // sigma_fast = 18%/day, decay window 600s -> 0.18 * sqrt(600/86400) * 1e4 = 150 bp
-        // (matches the sigma_D input used in worked example B, 10-worked-examples.md B.1,
+        // (matches the sigma_D input used in worked example B, worked example B,
         // where the same value is supplied directly rather than re-derived).
         let bps = decay_window_vol_bps(0.18, 600.0);
         assert!((bps - 150.0).abs() < 1e-6, "got {bps}");

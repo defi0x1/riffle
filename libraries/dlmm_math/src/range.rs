@@ -1,8 +1,8 @@
 /// Minimum number of bins on each side of the active bin, in every regime
-/// (plans/04 §8: "N ≥ 10 in every regime").
+/// ("N ≥ 10 in every regime").
 pub const MIN_BIN_COUNT: u32 = 10;
 
-/// Range half-width as a fraction of price (plans/04 §8): `W = 1.5·σ_d·√T`, `T` in days.
+/// Range half-width as a fraction of price: `W = 1.5·σ_d·√T`, `T` in days.
 pub fn range_half_width(sigma_d: f64, horizon_days: f64) -> f64 {
     1.5 * sigma_d * horizon_days.sqrt()
 }
@@ -19,20 +19,20 @@ pub fn bin_count_for_half_width(w_half: f64, bin_step: f64) -> u32 {
     n.max(MIN_BIN_COUNT)
 }
 
-/// F16: expected time to exit a symmetric range (Brownian, no drift, start at center).
+/// expected time in range: expected time to exit a symmetric range (Brownian, no drift, start at center).
 ///
 /// # Formula
 ///
-/// * `E[T_exit] = W²/σ²` (F16)
+/// * `E[T_exit] = W²/σ²`
 pub fn expected_time_to_exit(half_width: f64, sigma: f64) -> f64 {
     (half_width * half_width) / (sigma * sigma)
 }
 
-/// F16 with an early trigger at `α·W` (`α ∈ [0.6, 1]`, `02 §9.2`).
+/// expected time in range with an early trigger at `α·W` (`α ∈ [0.6, 1]`, `02`).
 ///
 /// # Formula
 ///
-/// * `E[T_trigger] = (αW)²/σ²` (F16)
+/// * `E[T_trigger] = (αW)²/σ²`
 pub fn expected_time_to_trigger(alpha: f64, half_width: f64, sigma: f64) -> f64 {
     let a_w = alpha * half_width;
     (a_w * a_w) / (sigma * sigma)
@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn test_range_half_width_matches_worked_example_b() {
-        // 10-worked-examples.md B.1: W = 1.5*sigma_12h = 1.5*18%*sqrt(0.5) ~= 19%.
+        // worked example B: W = 1.5*sigma_12h = 1.5*18%*sqrt(0.5) ~= 19%.
         let w = range_half_width(0.18, 0.5);
         assert!((w - 0.190919).abs() < 1e-5, "got {w}");
     }
@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn test_expected_time_to_trigger_matches_worked_example_b() {
-        // 10-worked-examples.md B.2: E[T_rebalance] = (0.7*0.2)^2/0.0324 ~= 0.6 d.
+        // worked example B2: E[T_rebalance] = (0.7*0.2)^2/0.0324 ~= 0.6 d.
         let t = expected_time_to_trigger(0.7, 0.2, 0.18);
         assert!((t - 0.6049).abs() < 1e-3, "got {t}");
     }

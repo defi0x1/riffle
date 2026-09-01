@@ -1,6 +1,5 @@
 -- Finalised at t+24h and t+72h (t+14d for the S regime). The evidence base
--- this version exists to build -- retained indefinitely, never dropped
--- (plans/03 §6). Low, episodic volume (a handful of rows per closed
+-- this version exists to build -- retained indefinitely, never dropped. Low, episodic volume (a handful of rows per closed
 -- position), so a plain table rather than a hypertable.
 CREATE TABLE outcomes (
     position_id           UUID NOT NULL REFERENCES paper_positions (id),

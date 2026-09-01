@@ -2,9 +2,9 @@
 -- pool_metrics_10m (0011), not pool_metrics_5m: every pool has a 10-minute
 -- base (native for tier 0, rolled up for tier 1), so building from 10m
 -- means this and everything above it is uniform across tiers -- "rollups
--- build from whichever base a pool has" (plans/11 §3) collapses into one
+-- build from whichever base a pool has" collapses into one
 -- rule once 10m has already reconciled the two bases.
---
+
 -- Sums add; OHLC uses first/max/min/last ordered by bucket_start.
 CREATE MATERIALIZED VIEW pool_metrics_1h
 WITH (timescaledb.continuous) AS

@@ -8,9 +8,9 @@ CREATE TABLE position_marks (
     price                DOUBLE PRECISION,
     active_bin_id          INTEGER,
     -- Delta fee_*_per_token_stored x hypothetical shares, summed per bin
-    -- (plans/03 §5) -- the same accrual logic bin_states exists to support.
+    -- the same accrual logic bin_states exists to support.
     fees_accrued_usd        NUMERIC(38,18),
-    -- F10 at the current price delta.
+    -- impermanent loss at the current price delta.
     il_usd               NUMERIC(38,18),
     value_usd             NUMERIC(38,18),
     in_range              BOOLEAN,

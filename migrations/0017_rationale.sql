@@ -1,6 +1,6 @@
 -- One row per evaluated condition, pass or fail, written for every
 -- evaluation including those that emit no signal -- this is what lets
--- /why explain silence (plans/03 §5). Typed rather than free text so it is
+-- /why explain silence. Typed rather than free text so it is
 -- diffable across ticks, unlike a competitor's free-text decision log.
 CREATE TABLE rationale (
     signal_id            UUID NOT NULL REFERENCES signals (id),

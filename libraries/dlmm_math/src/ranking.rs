@@ -1,7 +1,7 @@
 use crate::error::MathError;
 use crate::fees;
 
-/// Venue identifier (plans/08 §2: `pools.venue`, `0 = DLMM, 1 = DAMM_V2, ...`).
+/// Venue identifier (`pools.venue`, `0 = DLMM, 1 = DAMM_V2,...`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VenueId {
     Dlmm,
@@ -9,7 +9,7 @@ pub enum VenueId {
 }
 
 /// Minimal, venue-agnostic pool state needed to rank a pool. This is `dlmm_math`'s own
-/// boundary type (plans/08 §3.2) — the engine layer's richer pool state maps onto it at
+/// boundary type — the engine layer's richer pool state maps onto it at
 /// the call site; the math crate stays free of I/O and storage types.
 #[derive(Debug, Clone, Copy)]
 pub struct PoolState {
@@ -24,12 +24,12 @@ pub struct PoolState {
 /// Volatility inputs a `Venue` needs to price and rank a pool.
 #[derive(Debug, Clone, Copy)]
 pub struct VolEstimate {
-    /// Daily vol (fraction), variance-ratio corrected — the `σ_d` that sits in F14's
+    /// Daily vol (fraction), variance-ratio corrected — the `σ_d` that sits in the ranking metric's
     /// denominator.
     pub sigma_d: f64,
-    /// Decay-window vol in bps, feeding F15's `f_v̂`.
+    /// Decay-window vol in bps, feeding the forecast fee's `f_v̂`.
     pub sigma_d_bps: f64,
-    /// Fee-clustering multiplier `κ_c` (F15 note, `[A7]`).
+    /// Fee-clustering multiplier used by the fee forecast. Estimated, not tuned.
     pub kappa_c: f64,
 }
 
@@ -48,8 +48,8 @@ pub enum Comparator {
     Lt,
 }
 
-/// One gate check, recorded whether or not it changes the outcome (plans/04 §0: "Every
-/// stage writes a `RationaleItem` ... whether or not it changes the outcome").
+/// One gate check, recorded whether or not it changes the outcome ("Every
+/// stage writes a `RationaleItem`... whether or not it changes the outcome").
 #[derive(Debug, Clone)]
 pub struct RationaleItem {
     pub signal: String,
@@ -59,27 +59,27 @@ pub struct RationaleItem {
     pub passed: bool,
 }
 
-/// How a pool's economics are read (plans/08 §3.2) — the narrow seam a second venue
+/// How a pool's economics are read — the narrow seam a second venue
 /// extends through. `fee_rate`, `turnover_base` and `lvr_geometry` are the only
 /// venue-specific inputs to ranking; everything downstream of them is shared.
 pub trait Venue: Send + Sync {
     fn id(&self) -> VenueId;
 
-    /// Fee rate now and forecast. DLMM: F3 + F5/F15.
+    /// Fee rate now and forecast. DLMM: the base fee + the variable fee/the forecast fee.
     fn fee_rate(&self, pool: &PoolState, vol: &VolEstimate) -> Result<FeeRate, MathError>;
 
     /// Turnover denominator. DLMM: `L_a` (active-bin liquidity).
     fn turnover_base(&self, pool: &PoolState) -> Option<f64>;
 
     /// The geometry factor in the LVR denominator. DLMM Spot: `s` (bin step, as a
-    /// fraction). Keeps F14 and F22 one expression (plans/08 §3.2).
+    /// fraction). Keeps the ranking metric and the ranged-AMM ranking metric one expression.
     fn lvr_geometry(&self, pool: &PoolState) -> f64;
 
     /// Venue-specific gates beyond the shared risk gate. DLMM rejects nothing here.
     fn extra_gates(&self, pool: &PoolState) -> Vec<RationaleItem>;
 }
 
-/// DLMM: fees via F3/F5/F15, turnover base is active-bin liquidity, geometry is the bin
+/// DLMM: fees via the base fee/the variable fee/the forecast fee, turnover base is active-bin liquidity, geometry is the bin
 /// step itself.
 pub struct Dlmm;
 
@@ -118,15 +118,15 @@ impl Venue for Dlmm {
     }
 
     fn extra_gates(&self, _pool: &PoolState) -> Vec<RationaleItem> {
-        // DLMM rejects nothing here (plans/08 §3.2) -- the shared risk gate covers it.
+        // DLMM rejects nothing here -- the shared risk gate covers it.
         Vec::new()
     }
 }
 
-/// F14 (DLMM) / F22 (DAMM v2): fee/LVR ratio at the active bin.
+/// the ranking metric (DLMM) / the ranged-AMM ranking metric (DAMM v2): fee/LVR ratio at the active bin.
 ///
-/// Written once against `geometry` so F14 (`geometry = s`) and F22
-/// (`geometry = g/2`) are literally the same expression (plans/08 §1, §3.2) — the
+/// Written once against `geometry` so the ranking metric (`geometry = s`) and the ranged-AMM ranking metric
+/// (`geometry = g/2`) are literally the same expression — the
 /// algebra that shows DAMM v2's `σ²V/(4g)` reduces to DLMM's `σ²V/(2w)` at narrow
 /// ranges.
 ///
@@ -137,13 +137,13 @@ pub fn r_ratio(f_hat: f64, tau_a: f64, geometry: f64, protocol_share: f64, sigma
     2.0 * f_hat * tau_a * geometry * (1.0 - protocol_share) / (sigma_d * sigma_d)
 }
 
-/// Organic form of F14/F22: `R_org = R · φ_org · (1 − h_JIT)`.
+/// Organic form of the ranking metric/the ranged-AMM ranking metric: `R_org = R · φ_org · (1 − h_JIT)`.
 pub fn r_org(r: f64, phi_org: f64, h_jit: f64) -> f64 {
     r * phi_org * (1.0 - h_jit)
 }
 
-/// Expected fee yield rate (daily fraction) at intended position size `m`: plans/04
-/// §6.2's yield-at-size. Self-dilution is folded in via `L̄_a/(L̄_a + m)`, so ranking a
+/// Expected fee yield rate (daily fraction) at intended position size `m`:
+///'s yield-at-size. Self-dilution is folded in via `L̄_a/(L̄_a + m)`, so ranking a
 /// pool we would swamp is impossible by construction.
 ///
 /// # Formula
@@ -161,8 +161,8 @@ pub fn y_fee(
         / (active_bin_liquidity + m)
 }
 
-/// End-to-end ranking through a `Venue`: the one place F14/F22 are computed
-/// (plans/08 §3.2's "the ranking is written once").
+/// End-to-end ranking through a `Venue`: the one place the ranking metric/the ranged-AMM ranking metric are computed
+///.
 pub fn rank<V: Venue>(
     venue: &V,
     pool: &PoolState,
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_r_ratio_matches_worked_example_a() {
-        // 10-worked-examples.md A.1: R_gross (F14) = 14.1.
+        // worked example A: R_gross = 14.1.
         let r = r_ratio(1e-4, 31.25, 1e-4, 0.10, 2e-4);
         assert!((r - 14.0625).abs() < 1e-3, "got {r}");
     }
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_r_ratio_matches_worked_example_b() {
-        // 10-worked-examples.md B.1: R_gross (sigma_fast) = 3.75.
+        // worked example B: R_gross (sigma_fast) = 3.75.
         let r = r_ratio(0.0125, 375.0, 0.01, 0.10, 0.15);
         assert!((r - 3.75).abs() < 1e-9, "got {r}");
     }
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_y_fee_matches_worked_example_b() {
-        // 10-worked-examples.md B.1: Y_fee at m* = $500 (active-bin capital, per day) = 3.44/day.
+        // worked example B: Y_fee at m* = $500 (active-bin capital, per day) = 3.44/day.
         let y = y_fee(0.10, 0.0125, 375.0, 0.15, 12_000.0, 500.0);
         assert!((y - 3.4425).abs() < 1e-3, "got {y}");
     }

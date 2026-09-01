@@ -7,7 +7,7 @@ CREATE TABLE swaps (
     ix_index             INTEGER NOT NULL,
     pool_address         TEXT NOT NULL REFERENCES pools (pool_address),
     -- Keyed on for the wash-trade screen and the timing classifier
-    -- (plans/04 §3, §4.2).
+    --.
     signer               TEXT NOT NULL,
     -- Convention fixed here because it is easy to get backwards:
     -- swap_for_y = true means selling X for Y, i.e. sell-side volume.

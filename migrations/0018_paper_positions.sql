@@ -1,10 +1,10 @@
--- Opened when a POTENTIAL signal fires. Never touches chain (plans/08 §7:
+-- Opened when a POTENTIAL signal fires. Never touches chain (:
 -- no keys exist anywhere in the process tree). Mutable over its lifecycle
 -- (closed_at / close_reason are set later), so a plain table, not a
 -- hypertable.
---
+
 -- `lower_bin` / `upper_bin` are DLMM-specific (a range is expressed in
--- bins); plans/08 §1 says this table needs only a `venue` column added for
+-- bins); says this table needs only a `venue` column added for
 -- venue extension, not a satellite split like pools/pool_snapshots. A
 -- future venue's positions simply leave these NULL, the same way `pools`
 -- would carry NULL DLMM columns if it were not split -- except here the
@@ -30,6 +30,6 @@ CREATE TABLE paper_positions (
 );
 
 CREATE INDEX idx_paper_positions_pool_opened ON paper_positions (pool_address, opened_at DESC);
--- Tier demotion exempts a pool with an open paper position (plans/11 §4);
+-- Tier demotion exempts a pool with an open paper position;
 -- the engine needs this lookup on every demotion sweep.
 CREATE INDEX idx_paper_positions_open ON paper_positions (pool_address) WHERE closed_at IS NULL;

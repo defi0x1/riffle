@@ -143,7 +143,7 @@ fn test_decode_position_v2_sol_usdc() {
 // --- Event decoding -------------------------------------------------------------------------
 //
 // No live-chain fixture (see module doc comment above), so these build their own wire bytes
-// from known field values, using the crate's own discriminator() function -- the same one
+// from known field values, using the crate's own discriminator function -- the same one
 // production code uses -- rather than a hardcoded byte array.
 
 fn event_bytes(name: &str, payload: &[u8]) -> Vec<u8> {

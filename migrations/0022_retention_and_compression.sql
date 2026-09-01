@@ -1,13 +1,12 @@
 -- Retention and compression policies for every hypertable, collected here
--- as one concern rather than scattered across each table's own migration
--- (plans/03 §6, amended by plans/11 §7). The rule throughout: raw data
--- expires, aggregates and decisions are kept forever -- rebuilding an
+-- as one concern rather than scattered across each table's own migration.
+-- The rule throughout: raw data expires, aggregates and decisions are
+-- kept forever -- rebuilding an
 -- aggregate from expired raw is impossible, so the aggregates are the
 -- durable artefact.
 
--- ---------------------------------------------------------------------
 -- swaps: whole-program flow on the Geyser backend, the dominant unknown
--- in the capacity budget (plans/11 §7). Retention starts at 7 days, not
+-- in the capacity budget. Retention starts at 7 days, not
 -- 90, until 24 hours of measured volume justifies extending it -- sizing
 -- this table from a guess is how a disk fills at 3 a.m. Compression
 -- window is shortened to match: compressing at the original 7-day mark
@@ -23,9 +22,7 @@ ALTER TABLE swaps SET (
 SELECT add_compression_policy('swaps', INTERVAL '1 day');
 SELECT add_retention_policy('swaps', INTERVAL '7 days');
 
--- ---------------------------------------------------------------------
--- liquidity_events: low volume regardless of backend; the 90-day figure
--- from plans/03 §6 is unaffected by the swaps caveat above.
+-- liquidity_events: low volume regardless of backend; the 90-day figure.
 ALTER TABLE liquidity_events SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'pool_address',
@@ -34,7 +31,6 @@ ALTER TABLE liquidity_events SET (
 SELECT add_compression_policy('liquidity_events', INTERVAL '7 days');
 SELECT add_retention_policy('liquidity_events', INTERVAL '90 days');
 
--- ---------------------------------------------------------------------
 -- fee_param_updates: rare events (creator fee-parameter changes only) and
 -- an input to an instant-exit / kill-condition check, so kept indefinitely
 -- like the decision-evidence tables rather than the 90-day raw default --
@@ -47,8 +43,7 @@ ALTER TABLE fee_param_updates SET (
 );
 SELECT add_compression_policy('fee_param_updates', INTERVAL '30 days');
 
--- ---------------------------------------------------------------------
--- active_bin_snapshots: plans/03 §6, post R2 split.
+-- active_bin_snapshots:.
 ALTER TABLE active_bin_snapshots SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'pool_address',
@@ -57,8 +52,7 @@ ALTER TABLE active_bin_snapshots SET (
 SELECT add_compression_policy('active_bin_snapshots', INTERVAL '7 days');
 SELECT add_retention_policy('active_bin_snapshots', INTERVAL '90 days');
 
--- ---------------------------------------------------------------------
--- bin_states: 14-day retention, compression after 2 days (plans/11 §2 --
+-- bin_states: 14-day retention, compression after 2 days ( --
 -- the ~100x volume correction that drove the active_bin_snapshots split).
 ALTER TABLE bin_states SET (
     timescaledb.compress,
@@ -68,7 +62,6 @@ ALTER TABLE bin_states SET (
 SELECT add_compression_policy('bin_states', INTERVAL '2 days');
 SELECT add_retention_policy('bin_states', INTERVAL '14 days');
 
--- ---------------------------------------------------------------------
 -- pool_snapshots / dlmm_pool_state: same table, split by the shared/
 -- satellite rule (0009), so the same retention and compression schedule.
 ALTER TABLE pool_snapshots SET (
@@ -87,8 +80,7 @@ ALTER TABLE dlmm_pool_state SET (
 SELECT add_compression_policy('dlmm_pool_state', INTERVAL '7 days');
 SELECT add_retention_policy('dlmm_pool_state', INTERVAL '90 days');
 
--- ---------------------------------------------------------------------
--- pool_metrics_{5m,10m}: the durable long-term record (plans/03 §6);
+-- pool_metrics_{5m,10m}: the durable long-term record;
 -- indefinite retention, compressed after 30 days. Plain application-
 -- managed hypertables (see 0010/0011 for why they are not native
 -- continuous aggregates), so they take the same compression treatment as
@@ -131,8 +123,7 @@ ALTER MATERIALIZED VIEW pool_metrics_24h SET (
 );
 SELECT add_compression_policy('pool_metrics_24h', INTERVAL '30 days');
 
--- ---------------------------------------------------------------------
--- indicators_{5m,10m,1h,4h,24h}: same treatment (plans/03 §6). All five
+-- indicators_{5m,10m,1h,4h,24h}: same treatment. All five
 -- are application-managed hypertables (0015), not continuous aggregates.
 ALTER TABLE indicators_5m SET (
     timescaledb.compress,
@@ -169,8 +160,7 @@ ALTER TABLE indicators_24h SET (
 );
 SELECT add_compression_policy('indicators_24h', INTERVAL '30 days');
 
--- ---------------------------------------------------------------------
--- position_marks: not named in plans/03 §6's table, but it is the
+-- position_marks: not named in's table, but it is the
 -- evidence outcomes are scored against, so it gets the same "keep
 -- forever, compress once cold" treatment as the rest of the derived
 -- layer rather than the 90-day raw-event default.
@@ -181,9 +171,8 @@ ALTER TABLE position_marks SET (
 );
 SELECT add_compression_policy('position_marks', INTERVAL '30 days');
 
--- ---------------------------------------------------------------------
 -- ingest_health: operational telemetry, not evidence -- Prometheus is the
--- durable store for this (plans/08 §7), so Postgres keeps only enough for
+-- durable store for this, so Postgres keeps only enough for
 -- /status to answer recent-history questions.
 ALTER TABLE ingest_health SET (
     timescaledb.compress,

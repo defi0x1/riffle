@@ -4,4 +4,23 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+sqlx = { workspace = true, features = ["uuid"] }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 eyre = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+# Not in [workspace.dependencies]: signals.id and paper_positions.id are UUID
+# primary keys and no other crate in the workspace needs uuid yet.
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+common = { workspace = true }
+
+[features]
+# Gates the integration tests in tests/ that need a live Postgres. Plain
+# `cargo test` must pass with no database reachable.
+db-tests = []

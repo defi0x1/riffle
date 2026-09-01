@@ -1,7 +1,7 @@
 -- Split from a single bin-state table, deliberately (see 0008 for the twin
 -- and the full reasoning). This table carries the high-frequency signal:
 -- one row per pool per poll, tracking only the *active* bin.
---
+
 -- L-bar_a is a 60-minute median of active-bin liquidity, so it needs one
 -- bin at high frequency -- not the full ~210-bin distribution. Writing the
 -- full distribution at poll cadence was computed (not assumed) to be ~121M

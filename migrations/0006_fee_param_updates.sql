@@ -1,6 +1,6 @@
 -- Not decoded by the reference indexer we diverge from at all. We need it
 -- because a fee-parameter change is an instant exit re-evaluation with no
--- persistence window, and a jack above 2x is a kill condition (plans/04 §8).
+-- persistence window, and a jack above 2x is a kill condition.
 CREATE TABLE fee_param_updates (
     ts                  TIMESTAMPTZ NOT NULL,
     slot                BIGINT NOT NULL,

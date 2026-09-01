@@ -4,4 +4,30 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+common = { workspace = true }
+metrics = { workspace = true }
+dlmm_decode = { workspace = true }
+lb_clmm = { workspace = true }
+solana-client = { workspace = true }
+solana-sdk = { workspace = true }
+solana-account-decoder = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+reqwest-middleware = { workspace = true }
+reqwest-retry = { workspace = true }
+backon = { workspace = true }
+clap = { workspace = true }
 eyre = { workspace = true }
+tracing = { workspace = true }
+humantime = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Not in [workspace.dependencies]: needed to deserialise the raw Clock sysvar account bytes
+# (solana_sdk::clock::Clock derives serde::Deserialize but the wire format is bincode, the
+# same encoding every Solana account uses for its sysvars).
+bincode = "1"
+
+[dev-dependencies]
+tokio = { workspace = true }

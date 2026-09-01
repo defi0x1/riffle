@@ -1,6 +1,6 @@
 use crate::error::MathError;
 
-/// Bin price at `bin_id` for a pool with the given bin step: `P_i = (1 + s)^i` (F1).
+/// Bin price at `bin_id` for a pool with the given bin step: `P_i = (1 + s)^i`.
 ///
 /// Delegates to `lb_clmm::math::price_math::get_price_from_id`, the same Q64.64
 /// fixed-point routine the program uses on-chain, so this is bit-exact with the program
@@ -15,14 +15,14 @@ fn q64_to_f64(x: u128) -> f64 {
     (x as f64) / (1u128 << 64) as f64
 }
 
-/// Bin id whose price is closest to `price`: the inverse of F1.
+/// Bin id whose price is closest to `price`: the inverse of the bin price ladder.
 ///
 /// `lb_clmm` has no on-chain inverse — the program always knows its own `active_id` and
 /// never needs to recover a bin from a price — so this is our own, not a delegation.
 ///
 /// # Formula
 ///
-/// * `i = round(ln(P) / ln(1 + s))`, inverting F1's `P_i = (1 + s)^i`
+/// * `i = round(ln(P) / ln(1 + s))`, inverting the bin price ladder's `P_i = (1 + s)^i`
 ///
 /// # Precision
 ///

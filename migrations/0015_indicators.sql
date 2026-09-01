@@ -1,14 +1,14 @@
--- Derived layer (plans/03 §5, plans/04): one row per pool per bucket per
+-- Derived layer: one row per pool per bucket per
 -- timeframe, computed by the application from pool_metrics_{tf} and
 -- written directly -- these are not database continuous aggregates, since
 -- the indicator formulas (volatility estimators, the organic-flow blend,
 -- the ranking metric) are not expressible as SQL aggregate functions.
---
+
 -- `venue` is added here (and on signals, rationale, paper_positions,
--- outcomes) per plans/08 §1: the ranking metrics reduce to one shared
+-- outcomes): the ranking metrics reduce to one shared
 -- expression across venues, so the only thing these tables need to grow
 -- for a second venue is rows with a different `venue` value.
---
+
 -- *_change columns are the previous bucket's comparable value, computed by
 -- the application at write time (a plain LAG against the last row for the
 -- pool) and stored rather than read back with a window function -- this is
@@ -21,7 +21,7 @@ CREATE TABLE indicators_5m (
     bucket_start        TIMESTAMPTZ NOT NULL,
 
     -- A = measured L-bar_a (tier 1). B = TVL x phi_shape estimate (tier 0).
-    -- Only A counts toward outcome scoring (plans/11 §1). Fixed two-valued
+    -- Only A counts toward outcome scoring. Fixed two-valued
     -- semantic, not a venue-scoped enum, so a CHECK is appropriate here.
     quality            CHAR(1) NOT NULL CHECK (quality IN ('A', 'B')),
     regime             TEXT,
@@ -44,7 +44,7 @@ CREATE TABLE indicators_5m (
     sigma_d            DOUBLE PRECISION,
     sigma_jump          DOUBLE PRECISION,
 
-    -- Forecast fee rate (F15), bps precision to match pools.base_fee_bps
+    -- Forecast fee rate, bps precision to match pools.base_fee_bps
     -- and pool_snapshots.total_fee_bps.
     f_hat              NUMERIC(20,6),
     phi_org            DOUBLE PRECISION,
@@ -55,9 +55,9 @@ CREATE TABLE indicators_5m (
     r_org              DOUBLE PRECISION,
     y_fee              DOUBLE PRECISION,
 
-    -- Meteora's weighted-percentile blend, reproduced for contrast (plans/04
-    -- §6.4). Independently observable from the public API field set, so it
-    -- is safe to reproduce; see plans/09 §4.
+    -- Meteora's weighted-percentile blend, reproduced for contrast (
+    --). Independently observable from the public API field set, so it
+    -- is safe to reproduce;.
     top_score           DOUBLE PRECISION,
 
     PRIMARY KEY (pool_address, bucket_start)
@@ -103,8 +103,8 @@ CREATE TABLE indicators_10m (
     PRIMARY KEY (pool_address, bucket_start)
 );
 
--- Native base for tier-0 pools on the RPC backend (plans/11 §3); rolled up
--- for tier 1. This is the timeframe R3 makes structural rather than
+-- Native base for tier-0 pools on the RPC backend; rolled up
+-- for tier 1, which is what makes this timeframe structural rather than
 -- decorative.
 SELECT create_hypertable(
     'indicators_10m', 'bucket_start',

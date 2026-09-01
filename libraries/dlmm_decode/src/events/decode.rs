@@ -25,7 +25,7 @@ static POSITION_CLOSE_DISCRIMINATOR: LazyLock<[u8; 8]> =
 
 // `data` is the full self-CPI instruction data as it appears in an inner instruction of the
 // transaction: EVENT_IX_TAG_LE (8 bytes), then the per-event Anchor discriminator (8 bytes),
-// then the Borsh-encoded event body. See plans/06 §2.5 for the framing.
+// then the Borsh-encoded event body. for the framing.
 pub fn decode_event(data: &[u8]) -> eyre::Result<DecodedEvent> {
     if data.len() < 16 {
         eyre::bail!(
