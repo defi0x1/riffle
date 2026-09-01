@@ -12,3 +12,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+# Only used by tests/fixtures.rs to serialise an unsigned Transaction to the same wire format
+# `VersionedTransaction.deserialize()` reads on the TypeScript side. Already pulled in
+# transitively by solana-sdk's own "full" feature set (see Cargo.lock), so this adds no new
+# dependency to the build graph -- just names one that's already there.
+bincode = "1.3.3"

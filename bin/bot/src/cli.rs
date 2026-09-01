@@ -3,6 +3,7 @@
 // arguments, subcommands and `--help` for free, and clap's own error text is good enough to
 // send straight back to the chat.
 use clap::{Parser, Subcommand, ValueEnum};
+use rust_decimal::Decimal;
 
 use storage::types::Timeframe;
 
@@ -53,6 +54,39 @@ pub enum Command {
     },
     /// Ingest lag per source, slot gaps, tier size.
     Status,
+
+    /// Registers your Solana public key, or lists your registered wallets if none is given.
+    /// Only ever accepts a public key -- signing happens on your own device in the Mini App.
+    Wallet {
+        pubkey: Option<String>,
+        label: Option<String>,
+    },
+    /// Latest token balances for a registered wallet (yours, if you have exactly one).
+    Balance { wallet: Option<String> },
+    /// Open positions for a registered wallet (yours, if you have exactly one).
+    Positions { wallet: Option<String> },
+    /// Deposits-vs-withdrawals-plus-current-value for one of your positions.
+    Profit { position: String },
+
+    /// Proposes adding liquidity to one of your positions. Reviewed and signed in the Mini
+    /// App -- this chat only ever describes the proposal, it never moves funds itself.
+    Add {
+        position: String,
+        amount_x: Decimal,
+        amount_y: Decimal,
+    },
+    /// Proposes withdrawing a share of one of your positions. Reviewed and signed in the Mini
+    /// App.
+    Remove {
+        position: String,
+        #[arg(value_parser = clap::value_parser!(u8).range(1..=100))]
+        percent: u8,
+    },
+    /// Proposes claiming accrued fees on one of your positions. Reviewed and signed in the
+    /// Mini App.
+    Claim { position: String },
+    /// Proposes closing one of your positions entirely. Reviewed and signed in the Mini App.
+    Close { position: String },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -87,8 +121,9 @@ impl From<TimeframeArg> for Timeframe {
 }
 
 // Telegram sends "/top@MyBotName" in groups and always includes the leading slash; clap
-// only wants the bare subcommand name.
-fn normalize_first_token(token: &str) -> String {
+// only wants the bare subcommand name. `secret_guard` reuses this to check the command name
+// on raw text before any tokenizing that would otherwise happen inside clap itself.
+pub(crate) fn normalize_command_token(token: &str) -> String {
     let stripped = token.trim_start_matches('/');
     stripped.split('@').next().unwrap_or(stripped).to_string()
 }
@@ -96,7 +131,7 @@ fn normalize_first_token(token: &str) -> String {
 pub fn parse_command(text: &str) -> Result<Command, clap::Error> {
     let mut tokens: Vec<String> = text.split_whitespace().map(str::to_string).collect();
     if let Some(first) = tokens.first_mut() {
-        *first = normalize_first_token(first);
+        *first = normalize_command_token(first);
     }
     Cli::try_parse_from(tokens).map(|cli| cli.command)
 }
@@ -205,5 +240,127 @@ mod tests {
     #[test]
     fn test_top_rejects_unknown_timeframe() {
         assert!(parse_command("/top 3m").is_err());
+    }
+
+    #[test]
+    fn test_parses_wallet_with_no_args_as_a_list_request() {
+        let command = parse_command("/wallet").unwrap();
+        assert_eq!(
+            command,
+            Command::Wallet {
+                pubkey: None,
+                label: None
+            }
+        );
+    }
+
+    #[test]
+    fn test_parses_wallet_registration_with_label() {
+        let command =
+            parse_command("/wallet 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU main").unwrap();
+        assert_eq!(
+            command,
+            Command::Wallet {
+                pubkey: Some("7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU".to_string()),
+                label: Some("main".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_wallet_rejects_too_many_arguments() {
+        assert!(parse_command("/wallet addr1 label1 extra").is_err());
+    }
+
+    #[test]
+    fn test_parses_balance_without_wallet() {
+        assert_eq!(
+            parse_command("/balance").unwrap(),
+            Command::Balance { wallet: None }
+        );
+    }
+
+    #[test]
+    fn test_parses_positions_with_wallet() {
+        assert_eq!(
+            parse_command("/positions addr1").unwrap(),
+            Command::Positions {
+                wallet: Some("addr1".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn test_profit_requires_a_position_address() {
+        assert!(parse_command("/profit").is_err());
+    }
+
+    #[test]
+    fn test_parses_add_with_two_amounts() {
+        let command = parse_command("/add pos1 1.5 2.25").unwrap();
+        assert_eq!(
+            command,
+            Command::Add {
+                position: "pos1".to_string(),
+                amount_x: Decimal::new(15, 1),
+                amount_y: Decimal::new(225, 2),
+            }
+        );
+    }
+
+    #[test]
+    fn test_add_rejects_a_non_numeric_amount() {
+        assert!(parse_command("/add pos1 notanumber 2.0").is_err());
+    }
+
+    #[test]
+    fn test_add_rejects_missing_amounts() {
+        assert!(parse_command("/add pos1 1.0").is_err());
+    }
+
+    #[test]
+    fn test_parses_remove_with_percent() {
+        assert_eq!(
+            parse_command("/remove pos1 50").unwrap(),
+            Command::Remove {
+                position: "pos1".to_string(),
+                percent: 50,
+            }
+        );
+    }
+
+    #[test]
+    fn test_remove_rejects_zero_percent() {
+        assert!(parse_command("/remove pos1 0").is_err());
+    }
+
+    #[test]
+    fn test_remove_rejects_percent_over_a_hundred() {
+        assert!(parse_command("/remove pos1 101").is_err());
+    }
+
+    #[test]
+    fn test_parses_claim() {
+        assert_eq!(
+            parse_command("/claim pos1").unwrap(),
+            Command::Claim {
+                position: "pos1".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parses_close() {
+        assert_eq!(
+            parse_command("/close pos1").unwrap(),
+            Command::Close {
+                position: "pos1".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_close_rejects_missing_position() {
+        assert!(parse_command("/close").is_err());
     }
 }

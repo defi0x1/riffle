@@ -5,13 +5,15 @@ pub use escape::{escape_code_span, escape_markdown_v2};
 pub use paginate::{MESSAGE_LIMIT, paginate};
 
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 
 use storage::queries::{
-    IngestHealthStatus, LatestConfig, PoolDetail, PoolRanking, RationaleItem, SignalWithRationale,
-    VolumeRanking,
+    IngestHealthStatus, LatestConfig, PoolDetail, PoolRanking, PositionRow,
+    PositionValuationRow, RationaleItem, SignalWithRationale, VolumeRanking, WalletBalanceRow,
+    WalletRow,
 };
 use storage::types::{Timeframe, quality, tier};
-use storage::write::IndicatorRow;
+use storage::write::{IndicatorRow, RegisterWalletOutcome};
 
 // Every helper below takes raw, unescaped text and returns something already safe to drop
 // into a MarkdownV2 message. `escape_markdown_v2` is never applied a second time to their
@@ -368,6 +370,392 @@ pub fn render_status(
         ));
     }
 
+    out
+}
+
+// A fund-moving proposal always ends with the same statement of fact: this chat cannot sign
+// anything, and nothing moves until the Mini App is used. Centralised so every proposal states
+// it identically rather than in slightly different words each time.
+fn miniapp_notice() -> String {
+    plain(
+        "this chat cannot sign anything. Tap the button below to review and sign this in the \
+         Mini App -- nothing moves until you approve it there, and you will be sent back here \
+         once it confirms.",
+    )
+}
+
+fn fmt_decimal(v: Decimal) -> String {
+    v.normalize().to_string()
+}
+
+fn fmt_opt_decimal(v: Option<Decimal>) -> String {
+    v.map(fmt_decimal).unwrap_or_else(|| "n/a".to_string())
+}
+
+// The one place a position's live-priced state gets rendered from, since three of the four
+// fund-moving proposals (and /profit) all want the same "what is this worth right now" line.
+// `position_valuations` is only ever populated once a marking pass has run for the position, so
+// `None` is a real, fairly common state (a just-opened position, most obviously) rather than a
+// query failure -- rendered plainly rather than omitted, so a missing price is never mistaken
+// for a zero one.
+fn render_valuation_line(valuation: Option<&PositionValuationRow>) -> String {
+    match valuation {
+        None => plain(
+            "no live valuation on record yet for this position -- current price and value will \
+             be shown in the Mini App before you confirm.",
+        ),
+        Some(v) => format!(
+            "as of {}: price {} / {}  value {}  in range {}\n",
+            code(&v.ts.format("%Y-%m-%d %H:%M:%S").to_string()),
+            code(&fmt_opt_decimal(v.price_x_usd)),
+            code(&fmt_opt_decimal(v.price_y_usd)),
+            code(&fmt_opt_decimal(v.value_usd)),
+            code(match v.in_range {
+                Some(true) => "yes",
+                Some(false) => "no",
+                None => "n/a",
+            }),
+        ),
+    }
+}
+
+fn position_header(position: &PositionRow, pair: Option<(&str, &str)>) -> String {
+    let pair_label = match pair {
+        Some((x, y)) => pair(x, y),
+        None => plain("unknown pair"),
+    };
+    format!(
+        "{}\n{}\n{}\nbin range {}\n",
+        bold("Position"),
+        code(&position.position_address),
+        pair_label,
+        code(&format!("{} - {}", position.lower_bin, position.upper_bin)),
+    )
+}
+
+pub fn render_key_material_refusal() -> String {
+    format!(
+        "{}\n\n{}",
+        bold("refused -- this looked like a private key or seed phrase"),
+        plain(
+            "/wallet only ever accepts a public key; signing happens on your own device inside \
+             the Mini App, and this bot and its backend never see, store, or log a private key. \
+             I have not stored or logged what you just sent, but Telegram has already kept a \
+             copy of it in this chat's history -- delete that message now, and treat whatever \
+             key or phrase it contained as compromised: abandon it, and create or import a new \
+             wallet in the Mini App instead.",
+        ),
+    )
+}
+
+pub fn render_needs_telegram_user() -> String {
+    plain(
+        "this command needs your Telegram user identity, which was not present on this \
+         message (channel posts and some anonymous-admin messages do not carry one) -- send it \
+         as yourself in a normal message.",
+    )
+}
+
+pub fn render_wallet_invalid_pubkey() -> String {
+    plain(
+        "that does not look like a Solana public key (expected a base58 string, 32-44 \
+         characters). If you meant to paste a private key or seed phrase, stop -- /wallet \
+         never needs one; register the public key shown in the Mini App instead.",
+    )
+}
+
+pub fn render_wallet_registered(pubkey: &str, outcome: &RegisterWalletOutcome) -> String {
+    match outcome {
+        RegisterWalletOutcome::Registered => {
+            format!("{} {}", code(pubkey), plain("registered to your account."))
+        }
+        RegisterWalletOutcome::AlreadyOwnedByCaller => {
+            format!("{} {}", code(pubkey), plain("is already yours -- label refreshed."))
+        }
+        RegisterWalletOutcome::OwnedByAnotherUser { .. } => format!(
+            "{} {}",
+            code(pubkey),
+            plain(
+                "is already registered to a different Telegram account. Its owner has to \
+                 revoke it before it can be registered here.",
+            )
+        ),
+    }
+}
+
+pub fn render_wallet_list(wallets: &[WalletRow]) -> String {
+    if wallets.is_empty() {
+        return render_no_wallets_registered();
+    }
+
+    let mut out = format!("{}\n\n", bold("Your wallets"));
+    for w in wallets {
+        let label = w.label.as_deref().unwrap_or("(no label)");
+        out.push_str(&format!(
+            "{}{}{}{}{}\n",
+            code(&w.pubkey),
+            plain(" -- "),
+            plain(label),
+            plain(", registered "),
+            code(&w.registered_at.format("%Y-%m-%d").to_string()),
+        ));
+    }
+    out
+}
+
+pub fn render_no_wallets_registered() -> String {
+    plain("no wallet registered yet. Send /wallet <pubkey> with the public key shown in the Mini App.")
+}
+
+pub fn render_wallet_not_owned(pubkey: &str) -> String {
+    format!(
+        "{} {}",
+        code(pubkey),
+        plain(
+            "is not registered to you. Register it first with /wallet, or use one of your own \
+             registered wallets.",
+        )
+    )
+}
+
+pub fn render_wallets_need_selection(wallets: &[WalletRow], example: &str) -> String {
+    let mut out = format!(
+        "{}\n\n",
+        plain("you have more than one registered wallet -- say which one:")
+    );
+    for w in wallets {
+        out.push_str(&format!("{}\n", code(&w.pubkey)));
+    }
+    out.push_str(&format!("\n{} {}", plain("e.g."), code(example)));
+    out
+}
+
+pub fn render_balance(wallet: &str, rows: &[WalletBalanceRow]) -> String {
+    let mut out = format!("{} {}\n\n", bold("Balances for"), code(wallet));
+    if rows.is_empty() {
+        out.push_str(&plain(
+            "no balances on record yet -- they refresh on a fixed poll cadence once a wallet \
+             is registered.",
+        ));
+        return out;
+    }
+    for r in rows {
+        out.push_str(&format!(
+            "{}  {}  {}\n",
+            code(&r.mint),
+            code(&fmt_decimal(r.amount)),
+            code(&fmt_opt_decimal(r.value_usd)),
+        ));
+    }
+    out
+}
+
+pub fn render_positions(rows: &[(PositionRow, Option<(String, String)>)]) -> String {
+    if rows.is_empty() {
+        return plain("no open positions for this wallet.");
+    }
+
+    let mut out = format!("{}\n\n", bold("Open positions"));
+    for (p, pair_opt) in rows {
+        out.push_str(&position_header(
+            p,
+            pair_opt.as_ref().map(|(x, y)| (x.as_str(), y.as_str())),
+        ));
+        out.push_str(&format!(
+            "opened {}\n\n",
+            code(&p.opened_at.format("%Y-%m-%d %H:%M").to_string()),
+        ));
+    }
+    out
+}
+
+pub fn render_position_not_found(address: &str) -> String {
+    format!("{} {}", plain("no position found at"), code(address))
+}
+
+pub fn render_position_not_owned(address: &str) -> String {
+    format!(
+        "{} {}",
+        code(address),
+        plain("does not belong to a wallet registered to you.")
+    )
+}
+
+pub fn render_position_closed(address: &str) -> String {
+    format!(
+        "{} {}",
+        code(address),
+        plain("is already closed -- there is nothing left to act on.")
+    )
+}
+
+pub fn render_profit(
+    position: &PositionRow,
+    pair: Option<(&str, &str)>,
+    deposits_usd: Decimal,
+    realized_usd: Decimal,
+    valuation: Option<&PositionValuationRow>,
+) -> String {
+    let mut out = position_header(position, pair);
+    out.push('\n');
+
+    let unrealized_usd = valuation.and_then(|v| v.value_usd).unwrap_or(Decimal::ZERO);
+    let profit_usd = realized_usd + unrealized_usd - deposits_usd;
+
+    out.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        plain("deposited "),
+        code(&fmt_decimal(deposits_usd)),
+        plain("  withdrawn/claimed "),
+        code(&fmt_decimal(realized_usd)),
+        plain("  current value "),
+        code(&fmt_opt_decimal(valuation.and_then(|v| v.value_usd))),
+    ));
+    out.push_str(&format!(
+        "{} {}\n",
+        bold("profit (USD, realized + unrealized):"),
+        code(&fmt_decimal(profit_usd)),
+    ));
+
+    if let Some(hold_usd) = valuation.and_then(|v| v.hold_value_usd) {
+        let vs_hold = unrealized_usd - hold_usd;
+        out.push_str(&format!(
+            "{} {} {}\n",
+            bold("vs. holding:"),
+            code(&fmt_decimal(vs_hold)),
+            plain("(value now vs. simply holding the deposited tokens)"),
+        ));
+    }
+
+    out.push('\n');
+    out.push_str(&render_valuation_line(valuation));
+    out
+}
+
+pub fn render_add_refused_gate(pool_address: &str, signal: Option<&SignalWithRationale>) -> String {
+    let mut out = format!(
+        "{}\n{}\n\n",
+        bold("refused -- this pool does not currently clear the risk gate"),
+        code(pool_address),
+    );
+
+    let Some(signal) = signal else {
+        out.push_str(&plain(
+            "no evaluation on record for this pool yet, so it cannot be verified against the \
+             gate -- try again once scoring has run for it.",
+        ));
+        return out;
+    };
+
+    if signal.kind == "POTENTIAL" {
+        // Should not happen if the caller checked `kind` first, but stated plainly rather than
+        // silently proceeding if this function is ever called on a passing pool.
+        out.push_str(&plain("this pool currently clears the gate."));
+        return out;
+    }
+
+    out.push_str(&format!(
+        "{}{}{}{}\n\n",
+        plain("latest evaluation: "),
+        code(&signal.kind),
+        plain(", timeframe "),
+        code(&signal.timeframe),
+    ));
+    for item in &signal.items {
+        out.push_str(&render_rationale_line(item));
+    }
+    out
+}
+
+pub fn render_add_refused_cap(position_address: &str, estimated_usd: Decimal, cap_usd: Decimal) -> String {
+    format!(
+        "{}\n{}\n{}{}{}{}{}",
+        bold("refused -- over the per-transaction cap"),
+        code(position_address),
+        plain("estimated value "),
+        code(&fmt_decimal(estimated_usd)),
+        plain(" exceeds the configured cap "),
+        code(&fmt_decimal(cap_usd)),
+        plain(" -- split this into smaller adds, or ask an operator to raise the configured cap."),
+    )
+}
+
+pub fn render_add_invalid_amount() -> String {
+    plain("both amounts must be greater than zero.")
+}
+
+pub fn render_add_proposal(
+    position: &PositionRow,
+    pair: Option<(&str, &str)>,
+    amount_x: Decimal,
+    amount_y: Decimal,
+    valuation: Option<&PositionValuationRow>,
+) -> String {
+    let mut out = position_header(position, pair);
+    out.push_str(&format!(
+        "\n{} add {} / {}\nstrategy {}\n\n",
+        bold("proposed:"),
+        code(&fmt_decimal(amount_x)),
+        code(&fmt_decimal(amount_y)),
+        code("SpotBalanced"),
+    ));
+    out.push_str(&render_valuation_line(valuation));
+    out.push('\n');
+    out.push_str(&miniapp_notice());
+    out
+}
+
+pub fn render_remove_proposal(
+    position: &PositionRow,
+    pair: Option<(&str, &str)>,
+    percent: u8,
+    valuation: Option<&PositionValuationRow>,
+) -> String {
+    let mut out = position_header(position, pair);
+    out.push_str(&format!(
+        "\n{} withdraw {} of this position\n\n",
+        bold("proposed:"),
+        code(&format!("{percent}%")),
+    ));
+    out.push_str(&render_valuation_line(valuation));
+    out.push('\n');
+    out.push_str(&miniapp_notice());
+    out
+}
+
+pub fn render_claim_proposal(
+    position: &PositionRow,
+    pair: Option<(&str, &str)>,
+    valuation: Option<&PositionValuationRow>,
+) -> String {
+    let mut out = position_header(position, pair);
+    out.push_str(&format!("\n{}\n\n", bold("proposed: claim accrued fees")));
+    if let Some(v) = valuation {
+        out.push_str(&format!(
+            "uncollected fees: {} / {}\n\n",
+            code(&fmt_opt_decimal(v.fees_x_uncollected)),
+            code(&fmt_opt_decimal(v.fees_y_uncollected)),
+        ));
+    }
+    out.push_str(&render_valuation_line(valuation));
+    out.push('\n');
+    out.push_str(&miniapp_notice());
+    out
+}
+
+pub fn render_close_proposal(
+    position: &PositionRow,
+    pair: Option<(&str, &str)>,
+    valuation: Option<&PositionValuationRow>,
+) -> String {
+    let mut out = position_header(position, pair);
+    out.push_str(&format!(
+        "\n{}\n\n",
+        bold("proposed: withdraw everything and close this position"),
+    ));
+    out.push_str(&render_valuation_line(valuation));
+    out.push('\n');
+    out.push_str(&miniapp_notice());
     out
 }
 

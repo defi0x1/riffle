@@ -666,6 +666,8 @@ dependencies = [
  "humantime",
  "logger",
  "metrics",
+ "reqwest 0.12.28",
+ "rust_decimal",
  "sqlx",
  "storage",
  "teloxide",
@@ -1362,6 +1364,7 @@ dependencies = [
 name = "dlmm_tx"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "borsh 1.8.1",
  "dlmm_decode",
  "eyre",

@@ -19,3 +19,5 @@ humantime = { workspace = true }
 teloxide = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+rust_decimal = { workspace = true }
+reqwest = { workspace = true }
