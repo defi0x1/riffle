@@ -1,37 +1,10 @@
 # fee-farming
 
-A Solana backend that indexes [Meteora DLMM](https://docs.meteora.ag) liquidity pools and ranks
-them by how profitable they are to provide liquidity to — served through a read-only Telegram bot.
+A Solana backend that indexes [Meteora DLMM](https://docs.meteora.ag) liquidity pools, computes a
+set of indicators over them at several timeframes, and serves the result through a read-only
+Telegram bot.
 
 It does not move funds. There are no keys anywhere in the process tree.
-
-## The question it answers
-
-Most pool rankings answer *"what is busy right now"* — fees earned, volume, price change. That is
-a reasonable question and several tools answer it well.
-
-This answers a different one: **which pools earn more in fees than they lose to arbitrageurs.**
-
-A liquidity provider in a constant-function market maker is short volatility. Every time the price
-moves, an arbitrageur rebalances the pool at a stale price and takes the difference. The formal
-name for that cost is Loss-Versus-Rebalancing (Milionis, Moallemi, Roughgarden & Zhang, 2022), and
-for a concentrated position it is proportional to `σ²`. Fee income, meanwhile, is proportional to
-volume through the active range.
-
-So the metric that matters is a ratio:
-
-```
-R = 2 · f · τ · s · (1 − ps) / σ²
-```
-
-where `f` is the fee rate, `τ` the turnover through the active bin, `s` the bin step, `ps` the
-protocol's share and `σ` the daily volatility. Breakeven is `R = 1`. The useful property is that
-**`R` is independent of position size, range width and shape** — so "which pool" is answerable
-separately from "how much", and the ranking is a property of the pool rather than of a particular
-position in it.
-
-A pool ranked highly on activity but poorly on `R` is a crowded, volatile trap. The reverse is a
-quiet pool nobody is looking at. The disagreements are the interesting output.
 
 ## Architecture
 
@@ -103,11 +76,10 @@ distinction.
 
 Three seams exist because three specific changes are anticipated. Everything else is flat code.
 
-- **A second venue.** The ranking is written once, through a `Venue` trait, because the underlying
-  algebra is genuinely shared — a bin-based AMM and a ranged constant-product AMM produce the same
-  dimensionless fee-over-LVR ratio, differing only in a geometry term. Pool tables are split into a
-  venue-agnostic core plus per-venue satellites, so adding one is `CREATE TABLE` and new rows, never
-  an `ALTER` of a populated table.
+- **A second venue.** Ranking is written once, against a `Venue` trait, because the underlying
+  algebra is genuinely shared between concentrated-liquidity designs — they differ by a geometry
+  term, not by structure. Pool tables are split into a venue-agnostic core plus per-venue
+  satellites, so adding one is `CREATE TABLE` and new rows, never an `ALTER` of a populated table.
 - **A second consumer.** All SQL lives in one crate; the bot contains none. Adding an HTTP API is a
   serialisation layer over functions that already exist and are already tested.
 - **A second ingestion source.** The `Source` trait above.
