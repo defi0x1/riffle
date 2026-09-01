@@ -1,0 +1,13 @@
+[package]
+name = "dlmm_math"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+lb_clmm = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# NOTE: not yet in [workspace.dependencies] (root Cargo.toml has no `proptest` line).
+# Pinned directly here; worth hoisting to the workspace if another crate needs it too.
+proptest = "1"
