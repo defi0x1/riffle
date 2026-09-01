@@ -1,0 +1,190 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            pool_address, venue, bucket_start, quality, regime,\n            vol_change, fee_change, tvl_change, price_change, active_tvl_change, holders_change,\n            vol_tvl, fee_tvl, fee_active_tvl, tau_a,\n            sigma_gk, sigma_fast, sigma_slow, sigma_d, sigma_jump,\n            f_hat, phi_org, phi_mech, phi_time, phi_size, r_gross, r_org, y_fee, top_score\n        FROM indicators_10m\n        WHERE pool_address = $1\n        ORDER BY bucket_start DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "bucket_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "quality",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "regime",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "vol_change",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "fee_change",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "tvl_change",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "price_change",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "active_tvl_change",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 10,
+        "name": "holders_change",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 11,
+        "name": "vol_tvl",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 12,
+        "name": "fee_tvl",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 13,
+        "name": "fee_active_tvl",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 14,
+        "name": "tau_a",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 15,
+        "name": "sigma_gk",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 16,
+        "name": "sigma_fast",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 17,
+        "name": "sigma_slow",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 18,
+        "name": "sigma_d",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 19,
+        "name": "sigma_jump",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 20,
+        "name": "f_hat",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 21,
+        "name": "phi_org",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 22,
+        "name": "phi_mech",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 23,
+        "name": "phi_time",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 24,
+        "name": "phi_size",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 25,
+        "name": "r_gross",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 26,
+        "name": "r_org",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 27,
+        "name": "y_fee",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 28,
+        "name": "top_score",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2dfe19ddc27a2390b815fda14aa44c1f5f49afffad8c758a986966f73057696f"
+}

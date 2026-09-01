@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO pool_metrics_5m (\n            pool_address, bucket_start, volume_usd, buy_volume_usd, sell_volume_usd,\n            trade_fee_usd, protocol_fee_usd, swap_count, unique_traders,\n            price_open, price_high, price_low, price_close,\n            tvl_close, active_tvl_close, active_tvl_median, active_bin_open, active_bin_close,\n            va_close, total_fee_bps_close, reserve_x_close, reserve_y_close,\n            net_deposit_usd, add_count, remove_count, lp_count_delta\n        )\n        SELECT * FROM UNNEST(\n            $1::text[], $2::timestamptz[], $3::numeric[], $4::numeric[], $5::numeric[],\n            $6::numeric[], $7::numeric[], $8::int[], $9::int[],\n            $10::float8[], $11::float8[], $12::float8[], $13::float8[],\n            $14::numeric[], $15::numeric[], $16::numeric[], $17::int[], $18::int[],\n            $19::int[], $20::numeric[], $21::numeric[], $22::numeric[],\n            $23::numeric[], $24::int[], $25::int[], $26::int[]\n        )\n        ON CONFLICT (pool_address, bucket_start) DO UPDATE SET\n            volume_usd          = EXCLUDED.volume_usd,\n            buy_volume_usd       = EXCLUDED.buy_volume_usd,\n            sell_volume_usd      = EXCLUDED.sell_volume_usd,\n            trade_fee_usd        = EXCLUDED.trade_fee_usd,\n            protocol_fee_usd      = EXCLUDED.protocol_fee_usd,\n            swap_count          = EXCLUDED.swap_count,\n            unique_traders       = EXCLUDED.unique_traders,\n            price_open          = EXCLUDED.price_open,\n            price_high          = EXCLUDED.price_high,\n            price_low           = EXCLUDED.price_low,\n            price_close          = EXCLUDED.price_close,\n            tvl_close           = EXCLUDED.tvl_close,\n            active_tvl_close      = EXCLUDED.active_tvl_close,\n            active_tvl_median      = EXCLUDED.active_tvl_median,\n            active_bin_open       = EXCLUDED.active_bin_open,\n            active_bin_close      = EXCLUDED.active_bin_close,\n            va_close            = EXCLUDED.va_close,\n            total_fee_bps_close     = EXCLUDED.total_fee_bps_close,\n            reserve_x_close       = EXCLUDED.reserve_x_close,\n            reserve_y_close       = EXCLUDED.reserve_y_close,\n            net_deposit_usd       = EXCLUDED.net_deposit_usd,\n            add_count           = EXCLUDED.add_count,\n            remove_count         = EXCLUDED.remove_count,\n            lp_count_delta        = EXCLUDED.lp_count_delta\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TimestamptzArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "Int4Array",
+        "Int4Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "Int4Array",
+        "Int4Array",
+        "Int4Array",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "Int4Array",
+        "Int4Array",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "244b696f14b73654f621b8fa0ba32f8a853bc44d4a0a9b5b740ecd13c3fc6caf"
+}

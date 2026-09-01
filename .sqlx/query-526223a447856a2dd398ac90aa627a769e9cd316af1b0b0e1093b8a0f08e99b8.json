@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE pools\n        SET tier = $1, tier_changed_at = $2\n        WHERE pool_address = ANY($3) AND tier <> $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Timestamptz",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "526223a447856a2dd398ac90aa627a769e9cd316af1b0b0e1093b8a0f08e99b8"
+}

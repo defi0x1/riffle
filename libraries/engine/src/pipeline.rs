@@ -328,3 +328,204 @@ fn evaluate<V: Venue>(
         rationale,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use dlmm_math::Dlmm;
+
+    use super::*;
+    use crate::risk_gate::QuoteAsset;
+
+    fn clean_risk_inputs() -> RiskGateInputs {
+        RiskGateInputs {
+            mint_authority_present: false,
+            freeze_authority_present: false,
+            freeze_authority_is_documented_multisig: false,
+            token2022_has_permanent_delegate: false,
+            token2022_has_transfer_hook: false,
+            token2022_transfer_fee_bps: 0,
+            top10_holder_share: None,
+            top1_holder_share: None,
+            insider_bundle_flagged: None,
+            other_venue_depth_ratio: Some(0.5),
+            cex_listed: false,
+            days_since_last_fee_param_change: 30.0,
+            pool_status_enabled: true,
+            activation_passed: true,
+            quote_asset: QuoteAsset::Sol,
+            signer_top_n_share_of_24h_volume: 0.1,
+            round_trip_ratio: 0.05,
+            age_hours: 10_000.0,
+        }
+    }
+
+    // A mature, unremarkable pool: not stable-pegged, not young, in the majors list --
+    // lands in V1 without tripping any risk-gate check.
+    fn healthy_v1_input(
+        now: DateTime<Utc>,
+        measured_active_bin_liquidity: Option<f64>,
+    ) -> PipelineInput {
+        PipelineInput {
+            pool_address: "pool1".to_string(),
+            venue: VenueId::Dlmm,
+            bucket_start: now,
+            now,
+            latest_bar: OhlcBar {
+                open: 100.0,
+                high: 100.5,
+                low: 99.6,
+                close: 100.1,
+            },
+            autocorrelations: Vec::new(),
+            log_returns_24h: vec![0.001, -0.001, 0.0008, -0.0006],
+            decay_window_secs: 600.0,
+            dev_peg: None,
+            is_pegged_whitelisted: false,
+            is_major: true,
+            age_days: 400.0,
+            kill_switch: false,
+            risk: clean_risk_inputs(),
+            bin_step_bps: 100,
+            base_factor: 10_000,
+            base_fee_power_factor: 0,
+            variable_fee_control: 40_000,
+            protocol_share: 0.10,
+            tvl_usd: 5_000_000.0,
+            measured_active_bin_liquidity,
+            kappa_c: 3.0,
+            trade_sizes: vec![50.0, 80.0, 120.0, 5_000.0, 60.0, 90.0],
+            phi_time: Some(0.85),
+            n_trades: 250,
+            c_fill: 0.5,
+            vol_24h: 8_000_000.0,
+            organic_class_prior_mu: 0.6,
+            organic_class_prior_tau_sq: 0.01,
+            volume_trend: 0.1,
+            v2_is_young: false,
+            fee_tvl_1h: None,
+            fee_tvl_24h: None,
+            fee_tvl_7d: None,
+            regime_capital: 1_000_000.0,
+            mu_fee: 0.001,
+            mu_arb: 0.0002,
+            free_capital: 200_000.0,
+            trigger_history: Vec::new(),
+            fee_jack_multiplier: None,
+            is_weekend_utc: false,
+            previous: PreviousBucket::default(),
+        }
+    }
+
+    // A regime freshly created by `RegimeState::new` has no committed regime yet and
+    // needs a full persistence window before one sticks (that is the behaviour the
+    // regime tests cover). These pipeline tests are about the stages downstream of
+    // regime classification, so they start from a regime that has already settled, the
+    // way a long-running instance would have.
+    fn committed_regime(now: DateTime<Utc>, regime: Regime) -> RegimeState {
+        let since = now - chrono::Duration::days(10);
+        RegimeState {
+            regime: Some(regime),
+            since,
+            pending: None,
+            pending_since: None,
+            last_transition: Some(since),
+        }
+    }
+
+    #[test]
+    fn test_screen_and_rank_produce_same_shape_with_different_quality() {
+        let now = DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let cfg = EngineConfig::parse_from(["engine"]);
+
+        let mut screen_vol = VolatilityState {
+            sigma_fast_variance: 0.0,
+            sigma_slow_variance: 0.0,
+            first_observed_at: now - chrono::Duration::days(10),
+        };
+        let mut screen_regime = committed_regime(now, Regime::V1);
+        let screen_result = screen(
+            healthy_v1_input(now, None),
+            &Dlmm,
+            &mut screen_vol,
+            &mut screen_regime,
+            &cfg,
+        );
+
+        let mut rank_vol = VolatilityState {
+            sigma_fast_variance: 0.0,
+            sigma_slow_variance: 0.0,
+            first_observed_at: now - chrono::Duration::days(10),
+        };
+        let mut rank_regime = committed_regime(now, Regime::V1);
+        let rank_result = rank(
+            healthy_v1_input(now, Some(300_000.0)),
+            &Dlmm,
+            &mut rank_vol,
+            &mut rank_regime,
+            &cfg,
+        );
+
+        assert_eq!(screen_result.indicators.quality, Quality::B);
+        assert_eq!(rank_result.indicators.quality, Quality::A);
+        assert_eq!(
+            screen_result.indicators.pool_address,
+            rank_result.indicators.pool_address
+        );
+        assert_eq!(
+            screen_result.indicators.regime,
+            rank_result.indicators.regime
+        );
+
+        // Same shape: whichever numeric fields one row populates, the other populates too
+        // -- only the values and the quality tag differ.
+        assert_eq!(
+            screen_result.indicators.sigma_d.is_some(),
+            rank_result.indicators.sigma_d.is_some()
+        );
+        assert_eq!(
+            screen_result.indicators.r_org.is_some(),
+            rank_result.indicators.r_org.is_some()
+        );
+        assert_eq!(
+            screen_result.indicators.phi_org.is_some(),
+            rank_result.indicators.phi_org.is_some()
+        );
+        assert_eq!(
+            screen_result.indicators.f_hat.is_some(),
+            rank_result.indicators.f_hat.is_some()
+        );
+
+        assert!(!screen_result.rationale.is_empty());
+        assert!(!rank_result.rationale.is_empty());
+    }
+
+    #[test]
+    fn test_rationale_emitted_even_when_every_stage_is_healthy() {
+        let now = DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let cfg = EngineConfig::parse_from(["engine"]);
+        let mut vol = VolatilityState {
+            sigma_fast_variance: 0.0,
+            sigma_slow_variance: 0.0,
+            first_observed_at: now - chrono::Duration::days(10),
+        };
+        let mut regime_state = committed_regime(now, Regime::V1);
+
+        let result = rank(
+            healthy_v1_input(now, Some(300_000.0)),
+            &Dlmm,
+            &mut vol,
+            &mut regime_state,
+            &cfg,
+        );
+
+        // A healthy pool triggers no exit and fails no gate, yet every stage still left a
+        // trail: the pipeline must be able to explain silence, not just noise.
+        assert!(result.rationale.len() > 10);
+        assert!(result.rationale.iter().all(|r| !r.signal.is_empty()));
+    }
+}

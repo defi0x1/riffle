@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT p.pool_address\n        FROM pools p\n        WHERE p.tier = $1\n          AND NOT EXISTS (\n              SELECT 1 FROM indicators_10m i WHERE i.pool_address = p.pool_address\n          )\n        ORDER BY p.created_at DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "96d4f3541eab122a0953d2d4a4744006942e7e6656b21ca530f3192e8970229d"
+}

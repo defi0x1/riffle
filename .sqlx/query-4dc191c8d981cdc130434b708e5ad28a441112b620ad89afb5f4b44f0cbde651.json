@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE pools\n        SET tier = $1, tier_changed_at = $2\n        WHERE pool_address = ANY($3)\n          AND tier <> $1\n          AND NOT EXISTS (\n              SELECT 1 FROM paper_positions pp\n              WHERE pp.pool_address = pools.pool_address AND pp.closed_at IS NULL\n          )\n        RETURNING pool_address\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Timestamptz",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4dc191c8d981cdc130434b708e5ad28a441112b620ad89afb5f4b44f0cbde651"
+}

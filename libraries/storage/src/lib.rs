@@ -11,5 +11,5 @@ pub mod write;
 
 pub mod queries;
 
-#[cfg(feature = "db-tests")]
+#[cfg(all(test, feature = "db-tests"))]
 mod test_support;

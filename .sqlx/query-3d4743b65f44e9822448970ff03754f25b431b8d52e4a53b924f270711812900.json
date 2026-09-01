@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO liquidity_events (\n            pool_address, ts, slot, signature, ix_index, position_address, owner,\n            action, active_bin_id, amount_x_raw, amount_y_raw, amount_usd\n        )\n        SELECT * FROM UNNEST(\n            $1::text[], $2::timestamptz[], $3::bigint[], $4::text[], $5::int[], $6::text[],\n            $7::text[], $8::smallint[], $9::int[], $10::numeric[], $11::numeric[], $12::numeric[]\n        )\n        ON CONFLICT (pool_address, ts, signature, ix_index) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TimestamptzArray",
+        "Int8Array",
+        "TextArray",
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "Int2Array",
+        "Int4Array",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3d4743b65f44e9822448970ff03754f25b431b8d52e4a53b924f270711812900"
+}

@@ -117,10 +117,13 @@ mod tests {
     use crate::test_support::test_pool;
     use crate::write::pools::{NewDlmmPoolParams, NewPool, upsert_dlmm_pool};
 
+    // Fixed, not Utc::now(): ts is part of the primary key, so a deterministic value makes the
+    // idempotency assertion below hold across repeated runs against a persistent database, not
+    // only within one process.
     fn sample_swap(pool_address: &str, signature: &str) -> NewSwap {
         NewSwap {
             pool_address: pool_address.to_string(),
-            ts: Utc::now(),
+            ts: "2024-01-01T00:00:00Z".parse().unwrap(),
             slot: 123,
             signature: signature.to_string(),
             ix_index: 0,
@@ -185,6 +188,7 @@ mod tests {
         let pool = test_pool().await;
         let pool_address = "pool_swaps_idempotent";
         ensure_pool(&pool, pool_address).await;
+        crate::test_support::reset_pool_fixture(&pool, pool_address).await;
 
         let rows = vec![sample_swap(pool_address, "sig_swaps_idempotent_1")];
 

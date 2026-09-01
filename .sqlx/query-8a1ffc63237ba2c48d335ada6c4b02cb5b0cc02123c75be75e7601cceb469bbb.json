@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (source)\n            source, ts, last_slot, slot_gap, messages, decode_errors, write_latency_ms\n        FROM ingest_health\n        ORDER BY source, ts DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_slot",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "slot_gap",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "messages",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "decode_errors",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "write_latency_ms",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8a1ffc63237ba2c48d335ada6c4b02cb5b0cc02123c75be75e7601cceb469bbb"
+}

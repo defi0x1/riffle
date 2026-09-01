@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, ts, pool_address, venue, timeframe, kind, regime\n        FROM signals\n        WHERE pool_address = $1 AND ts <= $2\n        ORDER BY ts DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "timeframe",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "regime",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "77ebb1b47e04e536d50ea585f442e8b8ec2ee0a0cb37b18ec08b94ccb9e21a0f"
+}

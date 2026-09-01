@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO fee_param_updates (pool_address, ts, slot, signature, field, old_value, new_value)\n        SELECT * FROM UNNEST(\n            $1::text[], $2::timestamptz[], $3::bigint[], $4::text[], $5::text[],\n            $6::bigint[], $7::bigint[]\n        )\n        ON CONFLICT (pool_address, ts, signature, field) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TimestamptzArray",
+        "Int8Array",
+        "TextArray",
+        "TextArray",
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ca5beaa4ada268a3cc99e9a254aa931d5d88fa2231ff8924c2be004e1d6baf31"
+}

@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO indicators_1h (\n            pool_address, venue, bucket_start, quality, regime,\n            vol_change, fee_change, tvl_change, price_change, active_tvl_change, holders_change,\n            vol_tvl, fee_tvl, fee_active_tvl, tau_a,\n            sigma_gk, sigma_fast, sigma_slow, sigma_d, sigma_jump,\n            f_hat, phi_org, phi_mech, phi_time, phi_size, r_gross, r_org, y_fee, top_score\n        )\n        SELECT * FROM UNNEST(\n            $1::text[], $2::smallint[], $3::timestamptz[], $4::text[], $5::text[],\n            $6::float8[], $7::float8[], $8::float8[], $9::float8[], $10::float8[], $11::float8[],\n            $12::float8[], $13::float8[], $14::float8[], $15::float8[],\n            $16::float8[], $17::float8[], $18::float8[], $19::float8[], $20::float8[],\n            $21::numeric[], $22::float8[], $23::float8[], $24::float8[], $25::float8[],\n            $26::float8[], $27::float8[], $28::float8[], $29::float8[]\n        )\n        ON CONFLICT (pool_address, bucket_start) DO UPDATE SET\n            venue              = EXCLUDED.venue,\n            quality            = EXCLUDED.quality,\n            regime             = EXCLUDED.regime,\n            vol_change         = EXCLUDED.vol_change,\n            fee_change         = EXCLUDED.fee_change,\n            tvl_change         = EXCLUDED.tvl_change,\n            price_change       = EXCLUDED.price_change,\n            active_tvl_change  = EXCLUDED.active_tvl_change,\n            holders_change     = EXCLUDED.holders_change,\n            vol_tvl            = EXCLUDED.vol_tvl,\n            fee_tvl            = EXCLUDED.fee_tvl,\n            fee_active_tvl     = EXCLUDED.fee_active_tvl,\n            tau_a              = EXCLUDED.tau_a,\n            sigma_gk           = EXCLUDED.sigma_gk,\n            sigma_fast         = EXCLUDED.sigma_fast,\n            sigma_slow         = EXCLUDED.sigma_slow,\n            sigma_d            = EXCLUDED.sigma_d,\n            sigma_jump         = EXCLUDED.sigma_jump,\n            f_hat              = EXCLUDED.f_hat,\n            phi_org            = EXCLUDED.phi_org,\n            phi_mech           = EXCLUDED.phi_mech,\n            phi_time           = EXCLUDED.phi_time,\n            phi_size           = EXCLUDED.phi_size,\n            r_gross            = EXCLUDED.r_gross,\n            r_org              = EXCLUDED.r_org,\n            y_fee              = EXCLUDED.y_fee,\n            top_score          = EXCLUDED.top_score\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int2Array",
+        "TimestamptzArray",
+        "TextArray",
+        "TextArray",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "NumericArray",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array",
+        "Float8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "016884301f33ebeab756ec9a944b1e20bf197ccf012ad0c77ef461081bae9b3b"
+}

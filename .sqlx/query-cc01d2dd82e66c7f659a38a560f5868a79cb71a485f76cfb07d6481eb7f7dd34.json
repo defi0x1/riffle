@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            p.pool_address, p.venue, p.token_x, p.token_y, p.tvl_usd, p.tier,\n            i.bucket_start, i.quality, i.regime, i.r_org, i.top_score, i.vol_tvl, i.fee_tvl\n        FROM indicators_24h i\n        JOIN pools p ON p.pool_address = i.pool_address\n        WHERE p.venue = $1\n          AND i.bucket_start = (SELECT max(bucket_start) FROM indicators_24h)\n        ORDER BY i.r_org DESC NULLS LAST\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "token_x",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "token_y",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "tvl_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "tier",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "bucket_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "quality",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "regime",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "r_org",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 10,
+        "name": "top_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 11,
+        "name": "vol_tvl",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 12,
+        "name": "fee_tvl",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "cc01d2dd82e66c7f659a38a560f5868a79cb71a485f76cfb07d6481eb7f7dd34"
+}

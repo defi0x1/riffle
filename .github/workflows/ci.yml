@@ -6,6 +6,7 @@ on:
   pull_request:
 
 env:
+  SQLX_OFFLINE: "true"
   CARGO_TERM_COLOR: always
 
 jobs:

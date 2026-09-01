@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            horizon,\n            count(*) AS \"count!\",\n            count(*) FILTER (WHERE hit) AS \"hits!\",\n            avg(CASE WHEN hit THEN 1.0 ELSE 0.0 END)::float8 AS hit_rate,\n            avg(r_real) AS avg_r_real,\n            avg(r_predicted) AS avg_r_predicted,\n            avg(time_in_range) AS avg_time_in_range\n        FROM outcomes\n        WHERE finalized_at >= $1 AND finalized_at < $2\n        GROUP BY horizon\n        ORDER BY horizon\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "horizon",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "hits!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "hit_rate",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "avg_r_real",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "avg_r_predicted",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "avg_time_in_range",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "77d0be854ef7d1cb96ed557c55f0369564c226ab3ecd3a57c783f06feed840dc"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO pools (\n            pool_address, venue, token_x, token_y, base_fee_bps, protocol_share_bps,\n            tvl_usd, status, creator, activation_point, created_at, first_liquidity_at,\n            is_blacklisted, launchpad, tags, updated_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)\n        ON CONFLICT (pool_address) DO UPDATE SET\n            token_x            = EXCLUDED.token_x,\n            token_y            = EXCLUDED.token_y,\n            base_fee_bps       = EXCLUDED.base_fee_bps,\n            protocol_share_bps = EXCLUDED.protocol_share_bps,\n            tvl_usd            = EXCLUDED.tvl_usd,\n            status             = EXCLUDED.status,\n            creator            = EXCLUDED.creator,\n            activation_point   = EXCLUDED.activation_point,\n            first_liquidity_at = COALESCE(pools.first_liquidity_at, EXCLUDED.first_liquidity_at),\n            is_blacklisted     = EXCLUDED.is_blacklisted,\n            launchpad          = EXCLUDED.launchpad,\n            tags               = EXCLUDED.tags,\n            updated_at         = EXCLUDED.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Text",
+        "Text",
+        "Numeric",
+        "Int4",
+        "Numeric",
+        "Int2",
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool",
+        "Text",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9b7a666d9b959557455e8da286593eb67887af5d2b320043f3291272d11f8c4f"
+}

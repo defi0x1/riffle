@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO position_marks (position_id, ts, price, active_bin_id, fees_accrued_usd, il_usd, value_usd, in_range)\n        SELECT * FROM UNNEST(\n            $1::uuid[], $2::timestamptz[], $3::float8[], $4::int[],\n            $5::numeric[], $6::numeric[], $7::numeric[], $8::bool[]\n        )\n        ON CONFLICT (position_id, ts) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "TimestamptzArray",
+        "Float8Array",
+        "Int4Array",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "18fd7d0ca20197bfb608d6263f8bfdd25379959b3426404d9b1a6a61ee66251a"
+}

@@ -1,0 +1,118 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            p.pool_address, p.venue, p.token_x, p.token_y, p.base_fee_bps, p.protocol_share_bps,\n            p.tvl_usd, p.status, p.tier, p.tier_changed_at, p.created_at, p.first_liquidity_at,\n            p.is_blacklisted, p.launchpad,\n            d.bin_step, d.base_factor, d.collect_fee_mode\n        FROM pools p\n        JOIN dlmm_pool_params d ON d.pool_address = p.pool_address\n        WHERE p.pool_address = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "venue",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "token_x",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "token_y",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "base_fee_bps",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "protocol_share_bps",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "tvl_usd",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "tier",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 9,
+        "name": "tier_changed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "first_liquidity_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "is_blacklisted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "launchpad",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "bin_step",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 15,
+        "name": "base_factor",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "collect_fee_mode",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f4561d892adb472fee4b5a7b4fa737970c3dfaa8af05c08006b6a45ae535ec6b"
+}

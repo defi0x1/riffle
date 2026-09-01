@@ -84,6 +84,7 @@ mod tests {
     async fn test_insert_liquidity_events_is_idempotent() {
         let pool = test_pool().await;
         let pool_address = "pool_liq_events_idempotent";
+        crate::test_support::reset_pool_fixture(&pool, pool_address).await;
         let now = Utc::now();
 
         upsert_dlmm_pool(
@@ -123,9 +124,13 @@ mod tests {
         .await
         .unwrap();
 
+        // Fixed, not `now`: ts is part of the primary key, so a deterministic value makes the
+        // idempotency assertion below hold across repeated runs against a persistent database,
+        // not only within one process.
+        let event_ts: DateTime<Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let rows = vec![NewLiquidityEvent {
             pool_address: pool_address.to_string(),
-            ts: now,
+            ts: event_ts,
             slot: 42,
             signature: "sig_liq_events_idempotent".to_string(),
             ix_index: 0,

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tokens (\n            mint, symbol, name, decimals, mint_authority, freeze_authority, token_program,\n            extensions, supply, holder_count, top10_share, top1_share, is_verified,\n            rugcheck_score, rugcheck_flags, rugcheck_at, updated_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)\n        ON CONFLICT (mint) DO UPDATE SET\n            symbol           = EXCLUDED.symbol,\n            name             = EXCLUDED.name,\n            decimals         = EXCLUDED.decimals,\n            mint_authority   = EXCLUDED.mint_authority,\n            freeze_authority = EXCLUDED.freeze_authority,\n            token_program    = EXCLUDED.token_program,\n            extensions       = EXCLUDED.extensions,\n            supply           = EXCLUDED.supply,\n            holder_count     = EXCLUDED.holder_count,\n            top10_share      = EXCLUDED.top10_share,\n            top1_share       = EXCLUDED.top1_share,\n            is_verified      = EXCLUDED.is_verified,\n            rugcheck_score   = EXCLUDED.rugcheck_score,\n            rugcheck_flags   = EXCLUDED.rugcheck_flags,\n            rugcheck_at      = EXCLUDED.rugcheck_at,\n            updated_at       = EXCLUDED.updated_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Int2",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Numeric",
+        "Int4",
+        "Float8",
+        "Float8",
+        "Bool",
+        "Int4",
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d965384509ddbe41f3c0eef91876396202d8badda4c772819c15cf7f01cfa6cf"
+}

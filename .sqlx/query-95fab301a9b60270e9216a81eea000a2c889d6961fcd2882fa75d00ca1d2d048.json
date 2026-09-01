@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO outcomes (\n            position_id, horizon, venue, finalized_at, fees_real, fees_predicted,\n            lvr_real, r_real, r_predicted, time_in_range, hit\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        ON CONFLICT (position_id, horizon) DO UPDATE SET\n            venue          = EXCLUDED.venue,\n            finalized_at   = EXCLUDED.finalized_at,\n            fees_real      = EXCLUDED.fees_real,\n            fees_predicted = EXCLUDED.fees_predicted,\n            lvr_real       = EXCLUDED.lvr_real,\n            r_real         = EXCLUDED.r_real,\n            r_predicted    = EXCLUDED.r_predicted,\n            time_in_range  = EXCLUDED.time_in_range,\n            hit            = EXCLUDED.hit\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int2",
+        "Timestamptz",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Float8",
+        "Float8",
+        "Float8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "95fab301a9b60270e9216a81eea000a2c889d6961fcd2882fa75d00ca1d2d048"
+}

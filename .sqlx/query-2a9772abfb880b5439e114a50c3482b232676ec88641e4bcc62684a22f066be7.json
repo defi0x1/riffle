@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH state AS (\n            SELECT DISTINCT ON (pool_address) pool_address, slot AS state_slot\n            FROM pool_snapshots\n            WHERE ts >= $1\n            ORDER BY pool_address, ts DESC\n        ),\n        observed AS (\n            SELECT pool_address, max(slot) AS observed_slot\n            FROM (\n                SELECT pool_address, slot FROM swaps WHERE ts >= $1\n                UNION ALL\n                SELECT pool_address, slot FROM liquidity_events WHERE ts >= $1\n                UNION ALL\n                SELECT pool_address, slot FROM fee_param_updates WHERE ts >= $1\n            ) recent\n            GROUP BY pool_address\n        )\n        SELECT\n            o.pool_address AS \"pool_address!\",\n            s.state_slot AS \"state_slot!\",\n            o.observed_slot AS \"observed_slot!\"\n        FROM observed o\n        JOIN state s USING (pool_address)\n        WHERE s.state_slot < o.observed_slot\n        ORDER BY (o.observed_slot - s.state_slot) DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pool_address!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "state_slot!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "observed_slot!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      null
+    ]
+  },
+  "hash": "2a9772abfb880b5439e114a50c3482b232676ec88641e4bcc62684a22f066be7"
+}

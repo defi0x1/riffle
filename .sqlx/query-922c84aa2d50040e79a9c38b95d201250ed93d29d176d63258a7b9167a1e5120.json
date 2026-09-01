@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO bin_states (\n            pool_address, ts, slot, bin_id, amount_x, amount_y, liquidity_supply,\n            price_q64, ui_price, fee_x_per_token_stored, fee_y_per_token_stored\n        )\n        SELECT * FROM UNNEST(\n            $1::text[], $2::timestamptz[], $3::bigint[], $4::int[],\n            $5::numeric[], $6::numeric[], $7::numeric[], $8::numeric[], $9::float8[],\n            $10::numeric[], $11::numeric[]\n        )\n        ON CONFLICT (pool_address, bin_id, ts) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TimestamptzArray",
+        "Int8Array",
+        "Int4Array",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "Float8Array",
+        "NumericArray",
+        "NumericArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "922c84aa2d50040e79a9c38b95d201250ed93d29d176d63258a7b9167a1e5120"
+}
