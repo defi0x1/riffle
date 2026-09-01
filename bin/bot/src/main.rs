@@ -1,5 +1,8 @@
+use std::path::PathBuf;
+
 use async_trait::async_trait;
 use clap::Parser;
+use eyre::WrapErr;
 use tokio_util::sync::CancellationToken;
 
 use bot::{Config as TelegramConfig, TelegramWorker};
@@ -14,6 +17,12 @@ struct Args {
     metrics: metrics::Config,
     #[clap(flatten)]
     telegram: TelegramConfig,
+
+    /// Load settings from a YAML file (see config/bot.example.yaml). A flag or environment
+    /// variable of the same name still overrides anything set here. Omit this and the
+    /// binary behaves exactly as it always has: flags and environment variables only.
+    #[arg(long)]
+    config: Option<PathBuf>,
 }
 
 // Wraps the metrics HTTP server as a Worker so it can sit in the same JoinSet as the bot
@@ -38,7 +47,9 @@ impl common::Worker for MetricsWorker {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let args = Args::parse();
+    let config_path = common::config_flag(std::env::args().skip(1));
+    let args: Args = common::load_config_with_env(std::env::args_os(), config_path.as_deref())
+        .wrap_err_with(|| "Loading configuration")?;
     args.logging.init()?;
 
     tracing::info!("Starting bot");

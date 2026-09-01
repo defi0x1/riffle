@@ -143,6 +143,12 @@ pub struct Args {
     /// Postgres or the checkpoint file.
     #[arg(long, env, default_value_t = false)]
     pub dry_run: bool,
+
+    /// Load settings from a YAML file. A flag or environment variable of the same name
+    /// still overrides anything set here. Omit this and the binary behaves exactly as it
+    /// always has: flags and environment variables only.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 // rpc_url and database_url may carry embedded credentials, so logging goes through this impl

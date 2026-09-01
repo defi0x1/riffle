@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
@@ -82,6 +83,13 @@ pub struct Args {
     pub tick: TickConfig,
     #[clap(flatten)]
     pub pipeline_defaults: PipelineDefaultsConfig,
+
+    /// Load settings from a YAML file (see config/scorer.example.yaml). A flag or
+    /// environment variable of the same name still overrides anything set here. Omit this
+    /// and the binary behaves exactly as it always has: flags and environment variables
+    /// only.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 // engine::EngineConfig and TickConfig carry no secrets, so this only needs to redact the

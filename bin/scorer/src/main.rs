@@ -1,4 +1,3 @@
-use clap::Parser;
 use eyre::WrapErr;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -11,7 +10,9 @@ use scorer::signals::SignalsWorker;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let args = Args::parse();
+    let config_path = common::config_flag(std::env::args().skip(1));
+    let args: Args = common::load_config_with_env(std::env::args_os(), config_path.as_deref())
+        .wrap_err_with(|| "Loading configuration")?;
     args.logging.init()?;
     tracing::info!(config = %args, "Starting scorer");
 

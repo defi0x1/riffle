@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
@@ -93,6 +94,13 @@ pub struct Args {
     /// Data older than this is no longer considered fresh for heartbeat purposes.
     #[arg(long, env, value_parser = humantime::parse_duration, default_value = "60s")]
     pub health_freshness_threshold: Duration,
+
+    /// Load settings from a YAML file (see config/indexer.example.yaml). A flag or
+    /// environment variable of the same name still overrides anything set here. Omit this
+    /// and the binary behaves exactly as it always has: flags and environment variables
+    /// only.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug, Clone)]

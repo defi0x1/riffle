@@ -12,3 +12,6 @@ pub use postgres::*;
 
 mod tick;
 pub use tick::*;
+
+mod config;
+pub use config::*;
