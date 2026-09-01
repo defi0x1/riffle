@@ -46,3 +46,12 @@ bot_token: "000000000:YOUR_BOTFATHER_TOKEN"
 allowed_chats: "123456789,-987654321"
 # Rows rendered per ranking command before the message paginates.
 max_rows: 10
+# REQUIRED -- base URL for the Mini App's direct link (see @BotFather -> Bot Settings -> Menu
+# Button, or /newapp for a direct-link short name). Every fund-moving command (/add, /remove,
+# /claim, /close) appends "?startapp=<action>_<position>" to this and puts it on the button
+# under its proposal -- the chat itself never signs anything, this is only ever where that
+# happens.
+miniapp_base_url: "https://t.me/FeeFarmBot/app"
+# Advisory per-/add cap, in USD. Only enforced when the target position already carries a
+# priced valuation to estimate against; refused outright above this, not silently clamped.
+max_add_value_usd: 5000

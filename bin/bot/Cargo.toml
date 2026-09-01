@@ -21,3 +21,8 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 rust_decimal = { workspace = true }
 reqwest = { workspace = true }
+
+[dev-dependencies]
+# Test-only: building sample PositionRow/SignalWithRationale fixtures needs a Uuid value.
+# Not a runtime dependency of this crate -- storage owns every real id it hands back.
+uuid = "1"

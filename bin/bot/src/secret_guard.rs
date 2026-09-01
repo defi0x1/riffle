@@ -1,16 +1,19 @@
-// The one place a real user is most likely to hurt themselves: pasting a private key or seed
-// phrase into `/wallet`, thinking that is how a wallet gets "connected", when the design is
-// keyless end to end and `/wallet` only ever accepts a public key. This has to be caught on the
-// raw, untokenized message text, before clap ever sees it -- a seed phrase is many
-// whitespace-separated tokens, and clap's own "unexpected argument" error text echoes the
-// offending token back, which would put a fragment of the key into the chat a second time.
+// The one place a real user is most likely to hurt themselves: pasting signing material --
+// their wallet's raw key, or its backup recovery phrase -- into `/wallet`, thinking that is how
+// a wallet gets "connected", when the design is keyless end to end and `/wallet` only ever
+// accepts a public key. This has to be caught on the raw, untokenized message text, before clap
+// ever sees it -- a recovery phrase is many whitespace-separated tokens, and clap's own
+// "unexpected argument" error text echoes the offending token back, which would put a fragment
+// of it into the chat a second time.
 //
-// Detection is structural only (see `shape`): length and base58/BIP-39-word shape, never an
-// attempt to decode or validate the value as a real key. That keeps this check honest about
-// what it can promise -- it catches the shapes a real key or phrase actually takes, not "is
-// this cryptographically a key".
+// Detection is structural only (see `shape`): length and word-count/character shape, never an
+// attempt to decode or validate the value as real signing material. That keeps this check
+// honest about what it can promise -- it catches the shapes that material actually takes, not
+// "is this cryptographically valid".
 use crate::cli::normalize_command_token;
-use crate::shape::{looks_like_raw_secret_key, looks_like_secret_key_array, looks_like_seed_phrase};
+use crate::shape::{
+    looks_like_raw_signing_material, looks_like_recovery_phrase, looks_like_signing_material_array,
+};
 
 pub fn wallet_message_carries_key_material(text: &str) -> bool {
     let mut tokens = text.split_whitespace();
@@ -22,11 +25,11 @@ pub fn wallet_message_carries_key_material(text: &str) -> bool {
     }
 
     let rest: Vec<&str> = tokens.collect();
-    if looks_like_seed_phrase(&rest) {
+    if looks_like_recovery_phrase(&rest) {
         return true;
     }
     rest.iter()
-        .any(|t| looks_like_raw_secret_key(t) || looks_like_secret_key_array(t))
+        .any(|t| looks_like_raw_signing_material(t) || looks_like_signing_material_array(t))
 }
 
 #[cfg(test)]
@@ -34,19 +37,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_flags_a_seed_phrase_after_wallet() {
+    fn test_flags_a_recovery_phrase_after_wallet() {
         let text = "/wallet abandon ability able about above absent absorb abstract absurd abuse access accident";
         assert!(wallet_message_carries_key_material(text));
     }
 
     #[test]
-    fn test_flags_a_raw_base58_secret_key_after_wallet() {
+    fn test_flags_raw_base58_signing_material_after_wallet() {
         let text = format!("/wallet {}", "A".repeat(87));
         assert!(wallet_message_carries_key_material(&text));
     }
 
     #[test]
-    fn test_flags_a_keypair_array_after_wallet() {
+    fn test_flags_an_on_disk_key_file_array_after_wallet() {
         let numbers: Vec<String> = (0..64u16).map(|n| n.to_string()).collect();
         let text = format!("/wallet [{}]", numbers.join(","));
         assert!(wallet_message_carries_key_material(&text));

@@ -8,9 +8,8 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use storage::queries::{
-    IngestHealthStatus, LatestConfig, PoolDetail, PoolRanking, PositionRow,
-    PositionValuationRow, RationaleItem, SignalWithRationale, VolumeRanking, WalletBalanceRow,
-    WalletRow,
+    IngestHealthStatus, LatestConfig, PoolDetail, PoolRanking, PositionRow, PositionValuationRow,
+    RationaleItem, SignalWithRationale, VolumeRanking, WalletBalanceRow, WalletRow,
 };
 use storage::types::{Timeframe, quality, tier};
 use storage::write::{IndicatorRow, RegisterWalletOutcome};
@@ -419,8 +418,8 @@ fn render_valuation_line(valuation: Option<&PositionValuationRow>) -> String {
     }
 }
 
-fn position_header(position: &PositionRow, pair: Option<(&str, &str)>) -> String {
-    let pair_label = match pair {
+fn position_header(position: &PositionRow, token_pair: Option<(&str, &str)>) -> String {
+    let pair_label = match token_pair {
         Some((x, y)) => pair(x, y),
         None => plain("unknown pair"),
     };
@@ -470,7 +469,11 @@ pub fn render_wallet_registered(pubkey: &str, outcome: &RegisterWalletOutcome) -
             format!("{} {}", code(pubkey), plain("registered to your account."))
         }
         RegisterWalletOutcome::AlreadyOwnedByCaller => {
-            format!("{} {}", code(pubkey), plain("is already yours -- label refreshed."))
+            format!(
+                "{} {}",
+                code(pubkey),
+                plain("is already yours -- label refreshed.")
+            )
         }
         RegisterWalletOutcome::OwnedByAnotherUser { .. } => format!(
             "{} {}",
@@ -504,7 +507,9 @@ pub fn render_wallet_list(wallets: &[WalletRow]) -> String {
 }
 
 pub fn render_no_wallets_registered() -> String {
-    plain("no wallet registered yet. Send /wallet <pubkey> with the public key shown in the Mini App.")
+    plain(
+        "no wallet registered yet. Send /wallet <pubkey> with the public key shown in the Mini App.",
+    )
 }
 
 pub fn render_wallet_not_owned(pubkey: &str) -> String {
@@ -667,7 +672,11 @@ pub fn render_add_refused_gate(pool_address: &str, signal: Option<&SignalWithRat
     out
 }
 
-pub fn render_add_refused_cap(position_address: &str, estimated_usd: Decimal, cap_usd: Decimal) -> String {
+pub fn render_add_refused_cap(
+    position_address: &str,
+    estimated_usd: Decimal,
+    cap_usd: Decimal,
+) -> String {
     format!(
         "{}\n{}\n{}{}{}{}{}",
         bold("refused -- over the per-transaction cap"),
@@ -788,5 +797,153 @@ mod tests {
         assert!(out.ends_with('*'));
         assert!(out.contains("r\\_org"));
         assert!(out.contains("\\(breakeven 1\\.0\\)"));
+    }
+
+    fn sample_position() -> PositionRow {
+        PositionRow {
+            id: uuid::Uuid::nil(),
+            position_address: "position_addr_1".to_string(),
+            wallet_address: "wallet_addr_1".to_string(),
+            pool_address: "pool_addr_1".to_string(),
+            venue: storage::types::venue::DLMM,
+            opened_at: Utc::now(),
+            entry_active_bin: Some(100),
+            lower_bin: 90,
+            upper_bin: 110,
+            closed_at: None,
+            close_reason: None,
+        }
+    }
+
+    #[test]
+    fn test_render_key_material_refusal_never_takes_the_message_as_input() {
+        // The strongest guarantee against echoing a key back to the chat is a function that
+        // structurally cannot receive the raw text in the first place.
+        let out = render_key_material_refusal();
+        assert!(out.to_lowercase().contains("private key or seed phrase"));
+        assert!(out.to_lowercase().contains("not stored or logged"));
+        assert!(out.to_lowercase().contains("compromised"));
+    }
+
+    #[test]
+    fn test_render_add_proposal_states_pool_amounts_strategy_and_the_miniapp_step() {
+        let position = sample_position();
+        let out = render_add_proposal(
+            &position,
+            Some(("SOL", "USDC")),
+            Decimal::new(15, 1),
+            Decimal::new(2250, 2),
+            None,
+        );
+        assert!(out.contains("position_addr_1"));
+        assert!(out.contains("SOL"));
+        assert!(out.contains("USDC"));
+        assert!(out.contains("1.5"));
+        assert!(out.contains("22.5"));
+        assert!(out.contains("SpotBalanced"));
+        assert!(out.to_lowercase().contains("mini app"));
+        assert!(out.to_lowercase().contains("cannot sign"));
+    }
+
+    #[test]
+    fn test_render_add_proposal_notes_missing_live_valuation() {
+        let out = render_add_proposal(
+            &sample_position(),
+            Some(("SOL", "USDC")),
+            Decimal::ONE,
+            Decimal::ONE,
+            None,
+        );
+        assert!(out.to_lowercase().contains("no live valuation"));
+    }
+
+    #[test]
+    fn test_render_remove_proposal_states_the_percentage() {
+        let out = render_remove_proposal(&sample_position(), Some(("SOL", "USDC")), 25, None);
+        assert!(out.contains("25%"));
+        assert!(out.to_lowercase().contains("mini app"));
+    }
+
+    #[test]
+    fn test_render_close_proposal_states_full_withdrawal() {
+        let out = render_close_proposal(&sample_position(), Some(("SOL", "USDC")), None);
+        assert!(out.to_lowercase().contains("close"));
+        assert!(out.to_lowercase().contains("mini app"));
+    }
+
+    #[test]
+    fn test_render_add_refused_cap_explains_the_numbers() {
+        let out = render_add_refused_cap(
+            "position_addr_1",
+            Decimal::new(9_000, 0),
+            Decimal::new(5_000, 0),
+        );
+        assert!(out.contains("9000"));
+        assert!(out.contains("5000"));
+        assert!(out.to_lowercase().contains("cap"));
+    }
+
+    #[test]
+    fn test_render_add_refused_gate_explains_a_gate_fail_with_rationale() {
+        let signal = SignalWithRationale {
+            id: uuid::Uuid::nil(),
+            ts: Utc::now(),
+            pool_address: "pool_addr_1".to_string(),
+            venue: storage::types::venue::DLMM,
+            timeframe: "5m".to_string(),
+            kind: "GATE_FAIL".to_string(),
+            regime: None,
+            items: vec![RationaleItem {
+                signal_id: uuid::Uuid::nil(),
+                seq: 0,
+                venue: storage::types::venue::DLMM,
+                signal: "r_org".to_string(),
+                observed: Some("0.8".to_string()),
+                cmp: Some(">=".to_string()),
+                threshold: Some("1.0".to_string()),
+                passed: false,
+                note: None,
+            }],
+        };
+        let out = render_add_refused_gate("pool_addr_1", Some(&signal));
+        assert!(out.to_lowercase().contains("risk gate"));
+        assert!(out.contains("GATE_FAIL"));
+        assert!(out.contains("FAIL"));
+    }
+
+    #[test]
+    fn test_render_add_refused_gate_explains_missing_evaluation() {
+        let out = render_add_refused_gate("pool_addr_1", None);
+        assert!(out.to_lowercase().contains("no evaluation on record"));
+    }
+
+    #[test]
+    fn test_render_wallet_not_owned_explains_itself() {
+        let out = render_wallet_not_owned("wallet_addr_1");
+        assert!(out.to_lowercase().contains("not registered to you"));
+    }
+
+    #[test]
+    fn test_render_position_not_owned_explains_itself() {
+        let out = render_position_not_owned("position_addr_1");
+        assert!(out.to_lowercase().contains("does not belong"));
+    }
+
+    #[test]
+    fn test_render_no_wallets_registered_points_at_wallet_command() {
+        let out = render_no_wallets_registered();
+        assert!(out.contains("/wallet"));
+    }
+
+    #[test]
+    fn test_render_wallet_registered_reports_a_conflict_without_naming_the_owner() {
+        let out = render_wallet_registered(
+            "pubkey1",
+            &RegisterWalletOutcome::OwnedByAnotherUser {
+                owner_telegram_user_id: 12345,
+            },
+        );
+        assert!(!out.contains("12345"));
+        assert!(out.to_lowercase().contains("different telegram account"));
     }
 }

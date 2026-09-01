@@ -1,23 +1,35 @@
 // Turns a parsed Command into a rendered message. This is the only module that calls into
 // `storage`, and it never issues SQL of its own -- every function here is a query or write
 // function that already exists in that crate, composed and formatted.
+//
+// Fund-moving commands (add/remove/claim/close) never build, sign or submit anything -- there
+// is no signing-capable type anywhere in this crate, by design (see the workspace's keyless
+// guard script). What they do is: check the caller actually owns the position they named,
+// apply the same risk gate /potential applies before letting exposure grow, render exactly what
+// is proposed, and hand back a button that deep-links into the Mini App, where the unsigned
+// transaction is actually built, reviewed and signed. `DispatchOutcome` is the vehicle for that
+// button riding alongside the rendered text back to `worker`.
 use std::collections::HashSet;
 
 use chrono::Utc;
 use eyre::WrapErr;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use storage::queries::{
-    PoolRanking, PotentialPoolFilters, VolumeRanking, ingest_health, latest_config,
-    muted_pool_addresses, pool_detail, potential_pools, rationale_for, top_pools,
-    volume_ranked_pools, watch_set,
+    CashFlowRow, PoolRanking, PositionRow, PotentialPoolFilters, VolumeRanking, WalletRow,
+    active_wallets_for_user, cash_flows_for_position, ingest_health, latest_config,
+    latest_position_valuation, latest_wallet_balances, muted_pool_addresses,
+    open_positions_for_wallet, pool_detail, position_by_address, potential_pools, rationale_for,
+    top_pools, volume_ranked_pools, watch_set,
 };
-use storage::types::{Timeframe, venue};
-use storage::write::{demote_pools, mute_pool, promote_pools};
+use storage::types::{Timeframe, cash_flow_kind, venue};
+use storage::write::{NewWallet, demote_pools, mute_pool, promote_pools, register_wallet};
 
 use crate::cli::{Command, WatchAction};
 use crate::mute::tag_muted;
 use crate::render;
+use crate::shape::looks_like_pubkey;
 
 // Candidates are pulled well beyond what is displayed and re-sorted here by whichever metric
 // the command actually ranks on -- top_pools only orders by r_org, and no query returns a
@@ -25,21 +37,99 @@ use crate::render;
 // new query. /volume no longer needs this: volume_ranked_pools already ranks and limits.
 const CANDIDATE_MULTIPLIER: i64 = 5;
 
+// signals.kind is free TEXT (see migration 0016) rather than a typed enum in `storage`; this is
+// the one value out of the four documented there ("POTENTIAL | DEGRADING | GATE_FAIL | INFO")
+// that /add's risk gate treats as "cleared".
+const SIGNAL_KIND_POTENTIAL: &str = "POTENTIAL";
+
+// Everything a command needs beyond the pool connection and its own arguments. Built once per
+// message in `worker` from `Config` plus whatever Telegram handed back for this update.
+pub struct Context {
+    pub chat_id: i64,
+    // None for a message with no `from` field -- a channel post, or some anonymous-admin
+    // group messages. Wallet ownership is keyed on this, so every command that touches a
+    // wallet or a position needs it and refuses plainly when it is absent.
+    pub telegram_user_id: Option<i64>,
+    pub max_rows: usize,
+    pub miniapp_base_url: reqwest::Url,
+    pub max_add_value_usd: Decimal,
+}
+
+// What opens when the button under a fund-moving proposal is tapped. The bot never learns
+// whether it was tapped, let alone what happened after -- the Mini App and its own backend own
+// everything from here on.
+pub struct MiniAppButton {
+    pub label: String,
+    pub url: reqwest::Url,
+}
+
+pub struct DispatchOutcome {
+    pub body: String,
+    pub button: Option<MiniAppButton>,
+}
+
+impl DispatchOutcome {
+    pub fn text(body: String) -> Self {
+        DispatchOutcome { body, button: None }
+    }
+
+    fn with_button(body: String, label: &str, url: reqwest::Url) -> Self {
+        DispatchOutcome {
+            body,
+            button: Some(MiniAppButton {
+                label: label.to_string(),
+                url,
+            }),
+        }
+    }
+}
+
 pub async fn dispatch(
     pool: &PgPool,
-    chat_id: i64,
-    max_rows: usize,
+    ctx: &Context,
     command: Command,
-) -> eyre::Result<String> {
+) -> eyre::Result<DispatchOutcome> {
     match command {
-        Command::Top { tf } => top(pool, tf.into(), max_rows).await,
-        Command::Volume { tf } => volume(pool, tf.into(), max_rows).await,
-        Command::Potential { tf } => potential(pool, tf.into(), chat_id).await,
-        Command::Pool { address } => pool_cmd(pool, &address).await,
-        Command::Why { address } => why(pool, &address).await,
-        Command::Watch { address, action } => watch(pool, &address, action).await,
-        Command::Mute { address, duration } => mute(pool, chat_id, &address, duration.into()).await,
-        Command::Status => status(pool).await,
+        Command::Top { tf } => top(pool, tf.into(), ctx.max_rows)
+            .await
+            .map(DispatchOutcome::text),
+        Command::Volume { tf } => volume(pool, tf.into(), ctx.max_rows)
+            .await
+            .map(DispatchOutcome::text),
+        Command::Potential { tf } => potential(pool, tf.into(), ctx.chat_id)
+            .await
+            .map(DispatchOutcome::text),
+        Command::Pool { address } => pool_cmd(pool, &address).await.map(DispatchOutcome::text),
+        Command::Why { address } => why(pool, &address).await.map(DispatchOutcome::text),
+        Command::Watch { address, action } => watch(pool, &address, action)
+            .await
+            .map(DispatchOutcome::text),
+        Command::Mute { address, duration } => mute(pool, ctx.chat_id, &address, duration.into())
+            .await
+            .map(DispatchOutcome::text),
+        Command::Status => status(pool).await.map(DispatchOutcome::text),
+
+        Command::Wallet { pubkey, label } => wallet(pool, ctx.telegram_user_id, pubkey, label)
+            .await
+            .map(DispatchOutcome::text),
+        Command::Balance { wallet: w } => balance(pool, ctx.telegram_user_id, w)
+            .await
+            .map(DispatchOutcome::text),
+        Command::Positions { wallet: w } => positions(pool, ctx.telegram_user_id, w)
+            .await
+            .map(DispatchOutcome::text),
+        Command::Profit { position } => profit(pool, ctx.telegram_user_id, &position)
+            .await
+            .map(DispatchOutcome::text),
+
+        Command::Add {
+            position,
+            amount_x,
+            amount_y,
+        } => add(pool, ctx, &position, amount_x, amount_y).await,
+        Command::Remove { position, percent } => remove(pool, ctx, &position, percent).await,
+        Command::Claim { position } => claim(pool, ctx, &position).await,
+        Command::Close { position } => close(pool, ctx, &position).await,
     }
 }
 
@@ -177,5 +267,423 @@ async fn status(pool: &PgPool) -> eyre::Result<String> {
         &ingest,
         watched.len(),
         config.as_ref(),
+    ))
+}
+
+// `/wallet` is deliberately the only place in this crate that ever handles text a user might
+// mistake for key material. `secret_guard` has already refused anything shaped like one before
+// this is ever reached (see `worker::handle_message`); what lands here is either a bare list
+// request or something that at least has pubkey shape. The wrap_err_with messages below are
+// kept free of the pubkey itself on purpose -- see the module comment on treating a /wallet
+// message as radioactive.
+async fn wallet(
+    pool: &PgPool,
+    telegram_user_id: Option<i64>,
+    pubkey: Option<String>,
+    label: Option<String>,
+) -> eyre::Result<String> {
+    let Some(telegram_user_id) = telegram_user_id else {
+        return Ok(render::render_needs_telegram_user());
+    };
+
+    match pubkey {
+        None => {
+            let wallets = active_wallets_for_user(pool, telegram_user_id)
+                .await
+                .wrap_err_with(|| "Loading registered wallets")?;
+            Ok(render::render_wallet_list(&wallets))
+        }
+        Some(pubkey) => {
+            if !looks_like_pubkey(&pubkey) {
+                return Ok(render::render_wallet_invalid_pubkey());
+            }
+            let outcome = register_wallet(
+                pool,
+                &NewWallet {
+                    pubkey: pubkey.clone(),
+                    telegram_user_id,
+                    label,
+                    registered_at: Utc::now(),
+                },
+            )
+            .await
+            .wrap_err_with(|| "Registering wallet")?;
+            Ok(render::render_wallet_registered(&pubkey, &outcome))
+        }
+    }
+}
+
+async fn caller_owns_wallet(
+    pool: &PgPool,
+    telegram_user_id: i64,
+    wallet_address: &str,
+) -> eyre::Result<bool> {
+    let wallets = active_wallets_for_user(pool, telegram_user_id)
+        .await
+        .wrap_err_with(|| "Loading registered wallets")?;
+    Ok(wallets.iter().any(|w| w.pubkey == wallet_address))
+}
+
+enum WalletTarget {
+    Ready(String),
+    NeedsSelection(Vec<WalletRow>),
+    NoneRegistered,
+    NotOwned,
+}
+
+// Shared by /balance and /positions: both take an optional wallet and fall back to "the
+// caller's one wallet" when they have exactly one, since typing it every time would be
+// needless friction for the common case.
+async fn resolve_wallet(
+    pool: &PgPool,
+    telegram_user_id: i64,
+    requested: Option<&str>,
+) -> eyre::Result<WalletTarget> {
+    let wallets = active_wallets_for_user(pool, telegram_user_id)
+        .await
+        .wrap_err_with(|| "Loading registered wallets")?;
+
+    if wallets.is_empty() {
+        return Ok(WalletTarget::NoneRegistered);
+    }
+
+    match requested {
+        Some(address) => {
+            if wallets.iter().any(|w| w.pubkey == address) {
+                Ok(WalletTarget::Ready(address.to_string()))
+            } else {
+                Ok(WalletTarget::NotOwned)
+            }
+        }
+        None if wallets.len() == 1 => Ok(WalletTarget::Ready(wallets[0].pubkey.clone())),
+        None => Ok(WalletTarget::NeedsSelection(wallets)),
+    }
+}
+
+async fn pool_pair(pool: &PgPool, pool_address: &str) -> eyre::Result<Option<(String, String)>> {
+    let detail = pool_detail(pool, pool_address)
+        .await
+        .wrap_err_with(|| format!("Loading pool detail for {pool_address}"))?;
+    Ok(detail.map(|d| (d.pool.token_x, d.pool.token_y)))
+}
+
+async fn balance(
+    pool: &PgPool,
+    telegram_user_id: Option<i64>,
+    wallet: Option<String>,
+) -> eyre::Result<String> {
+    let Some(telegram_user_id) = telegram_user_id else {
+        return Ok(render::render_needs_telegram_user());
+    };
+
+    match resolve_wallet(pool, telegram_user_id, wallet.as_deref()).await? {
+        WalletTarget::NoneRegistered => Ok(render::render_no_wallets_registered()),
+        WalletTarget::NotOwned => Ok(render::render_wallet_not_owned(
+            wallet.as_deref().unwrap_or(""),
+        )),
+        WalletTarget::NeedsSelection(wallets) => Ok(render::render_wallets_need_selection(
+            &wallets,
+            "/balance <pubkey>",
+        )),
+        WalletTarget::Ready(address) => {
+            let rows = latest_wallet_balances(pool, &address)
+                .await
+                .wrap_err_with(|| format!("Loading balances for wallet {address}"))?;
+            Ok(render::render_balance(&address, &rows))
+        }
+    }
+}
+
+async fn positions(
+    pool: &PgPool,
+    telegram_user_id: Option<i64>,
+    wallet: Option<String>,
+) -> eyre::Result<String> {
+    let Some(telegram_user_id) = telegram_user_id else {
+        return Ok(render::render_needs_telegram_user());
+    };
+
+    match resolve_wallet(pool, telegram_user_id, wallet.as_deref()).await? {
+        WalletTarget::NoneRegistered => Ok(render::render_no_wallets_registered()),
+        WalletTarget::NotOwned => Ok(render::render_wallet_not_owned(
+            wallet.as_deref().unwrap_or(""),
+        )),
+        WalletTarget::NeedsSelection(wallets) => Ok(render::render_wallets_need_selection(
+            &wallets,
+            "/positions <pubkey>",
+        )),
+        WalletTarget::Ready(address) => {
+            let open = open_positions_for_wallet(pool, &address)
+                .await
+                .wrap_err_with(|| format!("Loading open positions for wallet {address}"))?;
+
+            // One pool_detail lookup per open position -- no bulk "positions with pair" query
+            // exists, and a caller's open-position count is small enough that this is not a
+            // concerning fan-out.
+            let mut rows = Vec::with_capacity(open.len());
+            for position in open {
+                let pair = pool_pair(pool, &position.pool_address).await?;
+                rows.push((position, pair));
+            }
+            Ok(render::render_positions(&rows))
+        }
+    }
+}
+
+fn sum_cash_flow_usd(rows: &[CashFlowRow], kind: i16) -> Decimal {
+    rows.iter()
+        .filter(|r| r.kind == kind)
+        .filter_map(|r| r.value_usd)
+        .sum()
+}
+
+async fn profit(
+    pool: &PgPool,
+    telegram_user_id: Option<i64>,
+    position_address: &str,
+) -> eyre::Result<String> {
+    let Some(telegram_user_id) = telegram_user_id else {
+        return Ok(render::render_needs_telegram_user());
+    };
+
+    let Some(position) = position_by_address(pool, position_address)
+        .await
+        .wrap_err_with(|| format!("Loading position {position_address}"))?
+    else {
+        return Ok(render::render_position_not_found(position_address));
+    };
+
+    if !caller_owns_wallet(pool, telegram_user_id, &position.wallet_address).await? {
+        return Ok(render::render_position_not_owned(position_address));
+    }
+
+    let cash_flows = cash_flows_for_position(pool, position.id)
+        .await
+        .wrap_err_with(|| format!("Loading cash flows for position {}", position.id))?;
+    let deposits_usd = sum_cash_flow_usd(&cash_flows, cash_flow_kind::DEPOSIT);
+    let realized_usd = sum_cash_flow_usd(&cash_flows, cash_flow_kind::WITHDRAWAL)
+        + sum_cash_flow_usd(&cash_flows, cash_flow_kind::FEE_CLAIM);
+
+    let valuation = latest_position_valuation(pool, position.id)
+        .await
+        .wrap_err_with(|| format!("Loading valuation for position {}", position.id))?;
+    let pair = pool_pair(pool, &position.pool_address).await?;
+
+    Ok(render::render_profit(
+        &position,
+        pair.as_ref().map(|(x, y)| (x.as_str(), y.as_str())),
+        deposits_usd,
+        realized_usd,
+        valuation.as_ref(),
+    ))
+}
+
+// Shared by every fund-moving command: does this position exist, does it belong to a wallet
+// registered to whoever sent this message, and is it still open. `Err` already carries the
+// fully rendered refusal -- callers just propagate it straight back out.
+async fn resolve_position(
+    pool: &PgPool,
+    telegram_user_id: Option<i64>,
+    position_address: &str,
+) -> eyre::Result<Result<PositionRow, DispatchOutcome>> {
+    let Some(telegram_user_id) = telegram_user_id else {
+        return Ok(Err(DispatchOutcome::text(
+            render::render_needs_telegram_user(),
+        )));
+    };
+
+    let Some(position) = position_by_address(pool, position_address)
+        .await
+        .wrap_err_with(|| format!("Loading position {position_address}"))?
+    else {
+        return Ok(Err(DispatchOutcome::text(
+            render::render_position_not_found(position_address),
+        )));
+    };
+
+    if !caller_owns_wallet(pool, telegram_user_id, &position.wallet_address).await? {
+        return Ok(Err(DispatchOutcome::text(
+            render::render_position_not_owned(position_address),
+        )));
+    }
+
+    if position.closed_at.is_some() {
+        return Ok(Err(DispatchOutcome::text(render::render_position_closed(
+            position_address,
+        ))));
+    }
+
+    Ok(Ok(position))
+}
+
+// Builds the "review and sign" button every fund-moving proposal ends with. `action_position`
+// rides as the Mini App direct link's `startapp` parameter (Telegram caps that at 64
+// `[A-Za-z0-9_-]` characters; an action tag plus a base58 position address comfortably fits) --
+// the Mini App re-derives everything it needs to build the transaction from there rather than
+// trusting anything else this link could carry.
+fn miniapp_outcome(
+    ctx: &Context,
+    body: String,
+    action: &str,
+    position_address: &str,
+    label: &str,
+) -> DispatchOutcome {
+    let mut url = ctx.miniapp_base_url.clone();
+    url.query_pairs_mut()
+        .append_pair("startapp", &format!("{action}_{position_address}"));
+    DispatchOutcome::with_button(body, label, url)
+}
+
+async fn add(
+    pool: &PgPool,
+    ctx: &Context,
+    position_address: &str,
+    amount_x: Decimal,
+    amount_y: Decimal,
+) -> eyre::Result<DispatchOutcome> {
+    let position = match resolve_position(pool, ctx.telegram_user_id, position_address).await? {
+        Ok(position) => position,
+        Err(outcome) => return Ok(outcome),
+    };
+
+    if amount_x <= Decimal::ZERO || amount_y <= Decimal::ZERO {
+        return Ok(DispatchOutcome::text(render::render_add_invalid_amount()));
+    }
+
+    // The same gate /potential applies: adding liquidity grows exposure, so it is refused,
+    // not silently allowed, against a pool that is not (or is no longer) quality-A and above
+    // breakeven r_org. Remove/claim/close reduce or realize exposure instead and are not
+    // gated the same way.
+    let signal = rationale_for(pool, &position.pool_address, Utc::now())
+        .await
+        .wrap_err_with(|| format!("Loading rationale for {}", position.pool_address))?;
+    if signal.as_ref().map(|s| s.kind.as_str()) != Some(SIGNAL_KIND_POTENTIAL) {
+        return Ok(DispatchOutcome::text(render::render_add_refused_gate(
+            &position.pool_address,
+            signal.as_ref(),
+        )));
+    }
+
+    let valuation = latest_position_valuation(pool, position.id)
+        .await
+        .wrap_err_with(|| format!("Loading valuation for position {}", position.id))?;
+
+    if let Some((price_x, price_y)) = valuation
+        .as_ref()
+        .and_then(|v| v.price_x_usd.zip(v.price_y_usd))
+    {
+        let estimated_usd = amount_x * price_x + amount_y * price_y;
+        if estimated_usd > ctx.max_add_value_usd {
+            return Ok(DispatchOutcome::text(render::render_add_refused_cap(
+                position_address,
+                estimated_usd,
+                ctx.max_add_value_usd,
+            )));
+        }
+    }
+    // No priced valuation on record yet: the cap cannot be checked from what this bot can
+    // read (see the module comment on the current-price gap), so the proposal proceeds and
+    // says so plainly via render_valuation_line rather than silently skipping the check.
+
+    let pair = pool_pair(pool, &position.pool_address).await?;
+    let body = render::render_add_proposal(
+        &position,
+        pair.as_ref().map(|(x, y)| (x.as_str(), y.as_str())),
+        amount_x,
+        amount_y,
+        valuation.as_ref(),
+    );
+    Ok(miniapp_outcome(
+        ctx,
+        body,
+        "add",
+        position_address,
+        "Add liquidity",
+    ))
+}
+
+async fn remove(
+    pool: &PgPool,
+    ctx: &Context,
+    position_address: &str,
+    percent: u8,
+) -> eyre::Result<DispatchOutcome> {
+    let position = match resolve_position(pool, ctx.telegram_user_id, position_address).await? {
+        Ok(position) => position,
+        Err(outcome) => return Ok(outcome),
+    };
+
+    let valuation = latest_position_valuation(pool, position.id)
+        .await
+        .wrap_err_with(|| format!("Loading valuation for position {}", position.id))?;
+    let pair = pool_pair(pool, &position.pool_address).await?;
+    let body = render::render_remove_proposal(
+        &position,
+        pair.as_ref().map(|(x, y)| (x.as_str(), y.as_str())),
+        percent,
+        valuation.as_ref(),
+    );
+    Ok(miniapp_outcome(
+        ctx,
+        body,
+        "remove",
+        position_address,
+        "Remove liquidity",
+    ))
+}
+
+async fn claim(
+    pool: &PgPool,
+    ctx: &Context,
+    position_address: &str,
+) -> eyre::Result<DispatchOutcome> {
+    let position = match resolve_position(pool, ctx.telegram_user_id, position_address).await? {
+        Ok(position) => position,
+        Err(outcome) => return Ok(outcome),
+    };
+
+    let valuation = latest_position_valuation(pool, position.id)
+        .await
+        .wrap_err_with(|| format!("Loading valuation for position {}", position.id))?;
+    let pair = pool_pair(pool, &position.pool_address).await?;
+    let body = render::render_claim_proposal(
+        &position,
+        pair.as_ref().map(|(x, y)| (x.as_str(), y.as_str())),
+        valuation.as_ref(),
+    );
+    Ok(miniapp_outcome(
+        ctx,
+        body,
+        "claim",
+        position_address,
+        "Claim fees",
+    ))
+}
+
+async fn close(
+    pool: &PgPool,
+    ctx: &Context,
+    position_address: &str,
+) -> eyre::Result<DispatchOutcome> {
+    let position = match resolve_position(pool, ctx.telegram_user_id, position_address).await? {
+        Ok(position) => position,
+        Err(outcome) => return Ok(outcome),
+    };
+
+    let valuation = latest_position_valuation(pool, position.id)
+        .await
+        .wrap_err_with(|| format!("Loading valuation for position {}", position.id))?;
+    let pair = pool_pair(pool, &position.pool_address).await?;
+    let body = render::render_close_proposal(
+        &position,
+        pair.as_ref().map(|(x, y)| (x.as_str(), y.as_str())),
+        valuation.as_ref(),
+    );
+    Ok(miniapp_outcome(
+        ctx,
+        body,
+        "close",
+        position_address,
+        "Close position",
     ))
 }

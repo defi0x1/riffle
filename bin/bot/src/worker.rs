@@ -9,7 +9,9 @@ use sqlx::PgPool;
 use teloxide::Bot;
 use teloxide::payloads::SendMessageSetters;
 use teloxide::requests::Requester;
-use teloxide::types::{BotCommand, ChatId, ParseMode, UpdateKind};
+use teloxide::types::{
+    BotCommand, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, UpdateKind,
+};
 use teloxide::update_listeners::{AsUpdateStream, polling_default};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::sync::CancellationToken;
@@ -17,7 +19,9 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::is_authorized;
 use crate::cli;
 use crate::config::Config;
+use crate::handlers::{Context, DispatchOutcome};
 use crate::ratelimit;
+use crate::secret_guard::wallet_message_carries_key_material;
 use crate::{handlers, render};
 
 // Telegram allows roughly 1 message/second per chat. A paginated /why dump to one chat is
@@ -70,16 +74,26 @@ impl common::Worker for TelegramWorker {
                     let UpdateKind::Message(message) = update.kind else { continue };
                     let Some(text) = message.text().map(str::to_string) else { continue };
                     let chat_id = message.chat.id;
+                    // u64 -> i64: real Telegram user ids sit nowhere near i64::MAX, and this is
+                    // the same BIGINT convention wallets.telegram_user_id already uses.
+                    let telegram_user_id = message.from.as_ref().map(|u| u.id.0 as i64);
 
                     let bot = bot.clone();
                     let pool = self.pool.clone();
-                    let allowed = self.config.allowed_chats.clone();
-                    let max_rows = self.config.max_rows;
+                    let config = self.config.clone();
                     let last_sent = last_sent.clone();
 
                     tokio::spawn(async move {
-                        if let Err(e) =
-                            handle_message(&bot, chat_id, &text, &pool, &allowed, max_rows, &last_sent).await
+                        if let Err(e) = handle_message(
+                            &bot,
+                            chat_id,
+                            telegram_user_id,
+                            &text,
+                            &pool,
+                            &config,
+                            &last_sent,
+                        )
+                        .await
                         {
                             tracing::error!(error = ?e, "Failed to handle a message");
                         }
@@ -95,43 +109,85 @@ impl common::Worker for TelegramWorker {
 async fn handle_message(
     bot: &Bot,
     chat_id: ChatId,
+    telegram_user_id: Option<i64>,
     text: &str,
     pool: &PgPool,
-    allowed: &[i64],
-    max_rows: usize,
+    config: &Config,
     last_sent: &AsyncMutex<HashMap<ChatId, Instant>>,
 ) -> eyre::Result<()> {
-    if !is_authorized(chat_id.0, allowed) {
+    if !is_authorized(chat_id.0, &config.allowed_chats) {
         tracing::warn!(chat = chat_id.0, "Refused a message from an unlisted chat");
-        return send(bot, chat_id, render::render_refusal(), last_sent).await;
+        return send(
+            bot,
+            chat_id,
+            DispatchOutcome::text(render::render_refusal()),
+            last_sent,
+        )
+        .await;
     }
 
     if !text.starts_with('/') {
         return Ok(());
     }
 
+    // Checked on the raw text, before clap ever tokenizes it: a seed phrase is many
+    // whitespace-separated tokens, and clap's own parse-error text would otherwise echo one of
+    // them straight back into the chat. Nothing about `text` is logged either way.
+    if wallet_message_carries_key_material(text) {
+        tracing::warn!(
+            chat = chat_id.0,
+            "Refused a /wallet message shaped like key material"
+        );
+        return send(
+            bot,
+            chat_id,
+            DispatchOutcome::text(render::render_key_material_refusal()),
+            last_sent,
+        )
+        .await;
+    }
+
     let command = match cli::parse_command(text) {
         Ok(command) => command,
-        Err(e) => return send(bot, chat_id, render::render_parse_error(&e), last_sent).await,
+        Err(e) => {
+            return send(
+                bot,
+                chat_id,
+                DispatchOutcome::text(render::render_parse_error(&e)),
+                last_sent,
+            )
+            .await;
+        }
     };
 
-    let body = handlers::dispatch(pool, chat_id.0, max_rows, command)
+    let ctx = Context {
+        chat_id: chat_id.0,
+        telegram_user_id,
+        max_rows: config.max_rows,
+        miniapp_base_url: config.miniapp_base_url.clone(),
+        max_add_value_usd: config.max_add_value_usd,
+    };
+
+    let outcome = handlers::dispatch(pool, &ctx, command)
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = ?e, "Command handler failed");
-            render::render_internal_error()
+            DispatchOutcome::text(render::render_internal_error())
         });
 
-    send(bot, chat_id, body, last_sent).await
+    send(bot, chat_id, outcome, last_sent).await
 }
 
 async fn send(
     bot: &Bot,
     chat_id: ChatId,
-    body: String,
+    outcome: DispatchOutcome,
     last_sent: &AsyncMutex<HashMap<ChatId, Instant>>,
 ) -> eyre::Result<()> {
-    for page in render::paginate(&body, render::MESSAGE_LIMIT) {
+    let pages = render::paginate(&outcome.body, render::MESSAGE_LIMIT);
+    let last_index = pages.len().saturating_sub(1);
+
+    for (i, page) in pages.into_iter().enumerate() {
         {
             let mut map = last_sent.lock().await;
             let wait =
@@ -142,8 +198,22 @@ async fn send(
             map.insert(chat_id, Instant::now());
         }
 
-        bot.send_message(chat_id, page)
-            .parse_mode(ParseMode::MarkdownV2)
+        let mut request = bot
+            .send_message(chat_id, page)
+            .parse_mode(ParseMode::MarkdownV2);
+        // The button only ever rides on the last page -- there is exactly one proposal per
+        // command, however many pages its text takes to say it.
+        if i == last_index
+            && let Some(button) = &outcome.button
+        {
+            let keyboard = InlineKeyboardMarkup::new([[InlineKeyboardButton::url(
+                button.label.clone(),
+                button.url.clone(),
+            )]]);
+            request = request.reply_markup(keyboard);
+        }
+
+        request
             .await
             .wrap_err_with(|| format!("Sending a message to chat {}", chat_id.0))?;
     }
@@ -167,6 +237,20 @@ async fn register_commands(bot: &Bot) -> eyre::Result<()> {
         BotCommand::new("watch", "Force or release tier-1 membership for a pool"),
         BotCommand::new("mute", "Suppress signals for a pool for a duration"),
         BotCommand::new("status", "Ingest health and tier size"),
+        BotCommand::new("wallet", "Register your public key, or list your wallets"),
+        BotCommand::new("balance", "Latest token balances for a registered wallet"),
+        BotCommand::new("positions", "Open positions for a registered wallet"),
+        BotCommand::new("profit", "Profit for one of your positions"),
+        BotCommand::new("add", "Propose adding liquidity (signed in the Mini App)"),
+        BotCommand::new(
+            "remove",
+            "Propose removing liquidity (signed in the Mini App)",
+        ),
+        BotCommand::new("claim", "Propose claiming fees (signed in the Mini App)"),
+        BotCommand::new(
+            "close",
+            "Propose closing a position (signed in the Mini App)",
+        ),
     ];
 
     bot.set_my_commands(commands)

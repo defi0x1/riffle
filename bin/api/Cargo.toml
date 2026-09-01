@@ -1,0 +1,61 @@
+[package]
+name = "api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+common = { workspace = true }
+logger = { workspace = true }
+metrics = { workspace = true }
+storage = { workspace = true }
+dlmm_tx = { workspace = true }
+dlmm_decode = { workspace = true }
+
+solana-sdk = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-account-decoder = { workspace = true }
+# Not in [workspace.dependencies]: only this crate reads a live getSignatureStatuses response's
+# TransactionStatus/TransactionConfirmationStatus shape.
+solana-transaction-status-client-types = "2"
+
+axum = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+clap = { workspace = true }
+eyre = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+humantime = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+sqlx = { workspace = true }
+rust_decimal = { workspace = true }
+prometheus = { workspace = true }
+
+# Not in [workspace.dependencies]: this crate's transaction_intents.id is a UUID primary key,
+# the only place outside storage itself that needs one.
+uuid = { version = "1", features = ["v4", "serde"] }
+# Not in [workspace.dependencies]: bincode is the wire encoding a Solana VersionedTransaction
+# must be serialised with for RPC and for what @solana/web3.js expects to deserialise -- needed
+# only here.
+bincode = "1"
+# HMAC-SHA256 verification of Telegram's initData signature (Mac::verify_slice compares in
+# constant time) -- not needed anywhere else in the workspace.
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+percent-encoding = "2"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+# Gates the integration tests that need a live Postgres, matching storage's own db-tests
+# convention. Plain `cargo test` must pass with no database reachable.
+db-tests = []
