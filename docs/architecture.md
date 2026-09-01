@@ -153,7 +153,7 @@ flowchart TD
     pm4h --> pipeline
     pm24h --> pipeline
     pipeline -->|IndicatorsWorker| indicators["indicators_5m/10m/1h/4h/24h\n+ rationale (every check, pass or fail)"]
-    indicators -->|SignalsWorker, cooldown in memory| signals["signals"]
+    indicators -->|SignalsWorker, cooldown persisted| signals["signals"]
     indicators -->|PaperPositionWorker| paper["paper_positions -> position_marks -> outcomes"]
     indicators --> bot["bot: /top /volume /potential /pool /why /status"]
     signals --> bot
@@ -201,9 +201,9 @@ composing seven stages in a fixed order, each able to short-circuit the rest:
    populates them yet -- the gate runs, but on incomplete inputs for those specific checks.
 4. **Organic flow** -- blends mechanical, size-based and (Geyser-only) timing evidence into
    `phi_org`, the estimated organic (non-arbitrage) share of flow, shrunk toward a class prior.
-5. **Fee forecast** -- the endogenous fee-rate estimate the ranking metric needs, delegating the
-   actual fee-curve math to the vendored on-chain program code so the result agrees bit-for-bit with
-   what the program itself would compute.
+5. **Fee forecast** -- the endogenous fee-rate estimate the ranking metric needs, using
+   `dlmm_math`'s own reimplementation of the program's fee-curve math, checked against pinned
+   reference values so the result agrees bit-for-bit with what the program itself would compute.
 6. **Ranking** -- `R = 2 * f_hat * tau_a * geometry * (1 - protocol_share) / sigma_d^2`
    (`dlmm_math::ranking::r_ratio`; breakeven at `R = 1`), `R_org` (`R` haircut by `phi_org` and a
    JIT-liquidity discount), yield and volume/TVL ratios, gated against per-regime thresholds.
@@ -225,10 +225,10 @@ trail of every evaluation, not only the interesting ones.
 `SignalsWorker` runs separately (default also every 5 minutes) over the watched set only, and
 re-evaluates the same trigger logic against persisted indicator history to decide whether a signal
 is worth surfacing (`Potential`, `Degrading`, `GateFail`) versus merely logged. Its cooldown --
-the minimum gap before the same condition is re-announced -- is tracked in memory, per process, not
-in the database; a `scorer` restart resets that clock, so a persistent condition can be
-re-announced sooner than `signal_cooldown` after a restart. Regime and volatility state do not share
-that gap -- those two do persist across restarts.
+the minimum gap before the same condition is re-announced -- is read from the `signals` table
+itself (`storage::queries::last_signal_broadcast`, keyed by pool/timeframe/kind), not tracked in
+memory, so a `scorer` restart does not forget a recent broadcast and re-announce it early. Regime
+and volatility state persist across restarts the same way, through their own tables.
 
 `PaperPositionWorker` opens a paper position (a database row -- no on-chain transaction, no wallet,
 nothing signed) when a watched pool's one-hour indicator classifies as `Potential`, sizes it with
@@ -297,14 +297,18 @@ rather than a crash:
 - **Protocol parameters are read per pool, never assumed.** Fee factors, the volatility accumulator
   parameters, and the protocol fee share are per-pool account fields, read fresh rather than
   hardcoded.
-- **Account decoding is pinned by golden tests against real mainnet bytes.** Three fixtures
-  (`LbPair`, a `BinArray`, a `PositionV2`), fetched once from a live pool, are decoded in
-  `libraries/dlmm_decode/tests/golden.rs` on every test run -- a program upgrade that shifts one of
-  these layouts fails the build rather than silently misreading a field. Event decoding is tested
-  differently: a spot-check found the deployed program's event discriminators do not match the
-  public source this workspace vendors, so event tests build bytes deterministically from known
-  field values and check round-trip decoding, not real captured transaction bytes. The two decoding
-  paths carry different strength of evidence, and it is worth knowing which is which.
+- **Account decoding owns its own IDL-derived definitions, checked two ways.** `dlmm_decode`
+  defines its own `#[repr(C)]`/`bytemuck::Pod` structs for `LbPair`, `BinArray` and `PositionV2`,
+  derived from the public IDL rather than a dependency on the program crate. A compile-time
+  `assert!(size_of::<...>() == N)` per struct (`libraries/dlmm_decode/src/accounts/wire.rs`) pins
+  each one to the IDL's own account byte count, so a layout that no longer matches fails the build
+  rather than compiling with a silently wrong size. Three golden fixtures (`LbPair`, a `BinArray`,
+  a `PositionV2`), fetched once from a live mainnet pool, are decoded in
+  `libraries/dlmm_decode/tests/golden.rs` on every test run as a second, independent check against
+  real bytes. Event decoding is tested differently: a spot-check found the deployed program's event
+  discriminators do not match the public IDL, so event tests build bytes deterministically from
+  known field values and check round-trip decoding, not real captured transaction bytes. The two
+  decoding paths carry different strength of evidence, and it is worth knowing which is which.
 - **TVL is not derived from token reserves today.** `StateWorker` fetches a pool's `LbPair` and its
   bin arrays, not its underlying token reserve accounts, so `reserve_x_raw`/`reserve_y_raw` and
   `tvl_usd` on `pool_snapshots` are always empty from the indexer's own state reads; TVL comes from
@@ -321,7 +325,11 @@ rather than a crash:
 
 Three seams exist because three specific changes were designed for. Everything else is flat code.
 
-- **A second venue** -- the `Venue` trait above, plus the core/satellite table split.
+- **A second venue** -- the `Venue` trait above and the core/satellite table split both
+  generalise cleanly. The query layer does not yet: `scoring_universe`, `pool_detail`,
+  `watch_set`, `paper_position_lifecycle` and `rollup_source` join a DLMM satellite table
+  unconditionally, so today they only ever return DLMM pools regardless of the `venue` argument
+  some of them take. See [`docs/venues.md`](venues.md) for the specifics.
 - **A second consumer** -- all SQL lives in `libraries/storage`; `bot` contains none. A second
   reader (an HTTP API) is a serialisation layer over functions that already exist and are already
   tested, enforced by CI grepping the rest of the tree for direct `sqlx::query` use.

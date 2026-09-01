@@ -51,7 +51,8 @@ pub struct RiskGateConfig {
 
 /// Raw signals the risk gate needs, assembled by the caller from chain data and the
 /// public API. `Option` fields that are `None` mean the signal is not available to us at
-/// all, not that it was checked and found absent.
+/// all, not that it was checked and found absent -- see `evaluate`'s doc comment for what
+/// that means for the gate's verdict.
 #[derive(Debug, Clone)]
 pub struct RiskGateInputs {
     pub mint_authority_present: bool,
@@ -59,9 +60,10 @@ pub struct RiskGateInputs {
     /// True if a present freeze authority is a documented multisig for a major, the one
     /// exception this gate allows.
     pub freeze_authority_is_documented_multisig: bool,
-    pub token2022_has_permanent_delegate: bool,
-    pub token2022_has_transfer_hook: bool,
-    pub token2022_transfer_fee_bps: u16,
+    /// `None` until Token-2022 extension decoding is wired up; see `evaluate`.
+    pub token2022_has_permanent_delegate: Option<bool>,
+    pub token2022_has_transfer_hook: Option<bool>,
+    pub token2022_transfer_fee_bps: Option<u16>,
     /// Not available for free -- needs a holder scan or a paid provider.
     pub top10_holder_share: Option<f64>,
     pub top1_holder_share: Option<f64>,
@@ -70,12 +72,14 @@ pub struct RiskGateInputs {
     /// From Jupiter routes; `None` if no route data could be fetched.
     pub other_venue_depth_ratio: Option<f64>,
     pub cex_listed: bool,
-    pub days_since_last_fee_param_change: f64,
+    /// `None` until fee-parameter-change history is joined in; see `evaluate`.
+    pub days_since_last_fee_param_change: Option<f64>,
     pub pool_status_enabled: bool,
     pub activation_passed: bool,
     pub quote_asset: QuoteAsset,
-    pub signer_top_n_share_of_24h_volume: f64,
-    pub round_trip_ratio: f64,
+    /// `None` until the wash-trading signer scan is implemented; see `evaluate`.
+    pub signer_top_n_share_of_24h_volume: Option<f64>,
+    pub round_trip_ratio: Option<f64>,
     pub age_hours: f64,
 }
 
@@ -93,6 +97,16 @@ pub struct RiskGateOutput {
 /// The risk gate. Every row runs, and every row is recorded, even after the gate has
 /// already failed -- that is what lets `/why` explain a rejection in full rather than at
 /// the first failing check.
+///
+/// A check whose input is `None` -- not measured, as opposed to measured and clean -- is
+/// recorded through `rationale::unavailable`, which marks it `observed = NaN` and
+/// `passed = true`. That is the one place this decision is made: an unavailable check is
+/// surfaced (a reader can tell it apart from a real pass by `observed.is_nan()`) but never
+/// blocks the gate on its own, the same as every other unmeasured signal here (holder
+/// concentration, the insider/bundle flag, other-venue depth). The alternative -- treating
+/// "not measured" as an automatic fail -- would make the gate reject every pool the moment
+/// any one data source is down, which is not this gate's job; the fix for a false pass is
+/// honesty about what ran, not turning "unknown" into "blocked".
 pub fn evaluate(
     inputs: &RiskGateInputs,
     regime: Regime,
@@ -116,24 +130,37 @@ pub fn evaluate(
         0.0,
     ));
 
-    rationale.push(rationale::check(
-        "token2022_no_permanent_delegate",
-        b2f(inputs.token2022_has_permanent_delegate),
-        Comparator::Le,
-        0.0,
-    ));
-    rationale.push(rationale::check(
-        "token2022_no_transfer_hook",
-        b2f(inputs.token2022_has_transfer_hook),
-        Comparator::Le,
-        0.0,
-    ));
-    rationale.push(rationale::check(
-        "token2022_transfer_fee_bps",
-        inputs.token2022_transfer_fee_bps as f64,
-        Comparator::Le,
-        cfg.transfer_fee_bps_max as f64,
-    ));
+    rationale.push(match inputs.token2022_has_permanent_delegate {
+        Some(flagged) => rationale::check(
+            "token2022_no_permanent_delegate",
+            b2f(flagged),
+            Comparator::Le,
+            0.0,
+        ),
+        None => rationale::unavailable("token2022_no_permanent_delegate", Comparator::Le, 0.0),
+    });
+    rationale.push(match inputs.token2022_has_transfer_hook {
+        Some(flagged) => rationale::check(
+            "token2022_no_transfer_hook",
+            b2f(flagged),
+            Comparator::Le,
+            0.0,
+        ),
+        None => rationale::unavailable("token2022_no_transfer_hook", Comparator::Le, 0.0),
+    });
+    rationale.push(match inputs.token2022_transfer_fee_bps {
+        Some(bps) => rationale::check(
+            "token2022_transfer_fee_bps",
+            bps as f64,
+            Comparator::Le,
+            cfg.transfer_fee_bps_max as f64,
+        ),
+        None => rationale::unavailable(
+            "token2022_transfer_fee_bps",
+            Comparator::Le,
+            cfg.transfer_fee_bps_max as f64,
+        ),
+    });
 
     rationale.push(match inputs.top10_holder_share {
         Some(share) => rationale::check(
@@ -201,12 +228,19 @@ pub fn evaluate(
     });
 
     let fee_change_window_days = cfg.creator_fee_change_window.as_secs_f64() / 86_400.0;
-    rationale.push(rationale::check(
-        "creator_no_recent_fee_change",
-        inputs.days_since_last_fee_param_change,
-        Comparator::Ge,
-        fee_change_window_days,
-    ));
+    rationale.push(match inputs.days_since_last_fee_param_change {
+        Some(days) => rationale::check(
+            "creator_no_recent_fee_change",
+            days,
+            Comparator::Ge,
+            fee_change_window_days,
+        ),
+        None => rationale::unavailable(
+            "creator_no_recent_fee_change",
+            Comparator::Ge,
+            fee_change_window_days,
+        ),
+    });
     rationale.push(rationale::check(
         "creator_status_enabled",
         b2f(!inputs.pool_status_enabled),
@@ -231,18 +265,32 @@ pub fn evaluate(
         0.0,
     ));
 
-    rationale.push(rationale::check(
-        "wash_signer_volume_share",
-        inputs.signer_top_n_share_of_24h_volume,
-        Comparator::Le,
-        cfg.wash_signer_volume_share_max,
-    ));
-    rationale.push(rationale::check(
-        "wash_round_trip_ratio",
-        inputs.round_trip_ratio,
-        Comparator::Lt,
-        cfg.wash_round_trip_ratio_max,
-    ));
+    rationale.push(match inputs.signer_top_n_share_of_24h_volume {
+        Some(share) => rationale::check(
+            "wash_signer_volume_share",
+            share,
+            Comparator::Le,
+            cfg.wash_signer_volume_share_max,
+        ),
+        None => rationale::unavailable(
+            "wash_signer_volume_share",
+            Comparator::Le,
+            cfg.wash_signer_volume_share_max,
+        ),
+    });
+    rationale.push(match inputs.round_trip_ratio {
+        Some(ratio) => rationale::check(
+            "wash_round_trip_ratio",
+            ratio,
+            Comparator::Lt,
+            cfg.wash_round_trip_ratio_max,
+        ),
+        None => rationale::unavailable(
+            "wash_round_trip_ratio",
+            Comparator::Lt,
+            cfg.wash_round_trip_ratio_max,
+        ),
+    });
 
     if regime == Regime::V2 {
         let min_age_hours = cfg.v2_min_age.as_secs_f64() / 3_600.0;
@@ -275,20 +323,20 @@ mod tests {
             mint_authority_present: false,
             freeze_authority_present: false,
             freeze_authority_is_documented_multisig: false,
-            token2022_has_permanent_delegate: false,
-            token2022_has_transfer_hook: false,
-            token2022_transfer_fee_bps: 0,
+            token2022_has_permanent_delegate: Some(false),
+            token2022_has_transfer_hook: Some(false),
+            token2022_transfer_fee_bps: Some(0),
             top10_holder_share: None,
             top1_holder_share: None,
             insider_bundle_flagged: None,
             other_venue_depth_ratio: Some(0.5),
             cex_listed: false,
-            days_since_last_fee_param_change: 30.0,
+            days_since_last_fee_param_change: Some(30.0),
             pool_status_enabled: true,
             activation_passed: true,
             quote_asset: QuoteAsset::Sol,
-            signer_top_n_share_of_24h_volume: 0.1,
-            round_trip_ratio: 0.05,
+            signer_top_n_share_of_24h_volume: Some(0.1),
+            round_trip_ratio: Some(0.05),
             age_hours: 1000.0,
         }
     }
@@ -347,7 +395,7 @@ mod tests {
     fn test_every_check_recorded_even_after_a_failure() {
         let mut inputs = clean_inputs();
         inputs.mint_authority_present = true;
-        inputs.round_trip_ratio = 0.9;
+        inputs.round_trip_ratio = Some(0.9);
         let (out, rationale) = evaluate(&inputs, Regime::V1, &cfg());
         assert!(!out.passed);
         // Both failing checks are present -- the gate does not stop recording at the
@@ -362,5 +410,103 @@ mod tests {
                 .iter()
                 .any(|r| r.signal == "wash_round_trip_ratio" && !r.passed)
         );
+    }
+
+    /// The property the original defect violated: every field that is not yet measured
+    /// anywhere in the pipeline must, when `None`, produce an `unavailable` rationale item
+    /// (`observed = NaN`) for exactly its signal -- never a `check`-shaped item that reads
+    /// as an ordinary pass. If a future edit reintroduces a hard-coded value for one of
+    /// these fields (e.g. going back to a plain `bool`/`f64` instead of `Option`), this
+    /// test stops compiling; if it instead feeds a fabricated `Some(...)` that happens to
+    /// satisfy the check, `item.observed.is_nan()` below catches it.
+    #[test]
+    fn test_every_unmeasured_input_renders_unavailable_not_passed_silently() {
+        let cases: [(&str, RiskGateInputs); 6] = [
+            ("token2022_no_permanent_delegate", {
+                let mut i = clean_inputs();
+                i.token2022_has_permanent_delegate = None;
+                i
+            }),
+            ("token2022_no_transfer_hook", {
+                let mut i = clean_inputs();
+                i.token2022_has_transfer_hook = None;
+                i
+            }),
+            ("token2022_transfer_fee_bps", {
+                let mut i = clean_inputs();
+                i.token2022_transfer_fee_bps = None;
+                i
+            }),
+            ("creator_no_recent_fee_change", {
+                let mut i = clean_inputs();
+                i.days_since_last_fee_param_change = None;
+                i
+            }),
+            ("wash_signer_volume_share", {
+                let mut i = clean_inputs();
+                i.signer_top_n_share_of_24h_volume = None;
+                i
+            }),
+            ("wash_round_trip_ratio", {
+                let mut i = clean_inputs();
+                i.round_trip_ratio = None;
+                i
+            }),
+        ];
+
+        for (signal, inputs) in cases {
+            let (out, rationale) = evaluate(&inputs, Regime::V1, &cfg());
+            let item = rationale
+                .iter()
+                .find(|r| r.signal == signal)
+                .unwrap_or_else(|| panic!("rationale must contain a {signal} item"));
+            assert!(
+                item.observed.is_nan(),
+                "{signal}: an unmeasured input must render unavailable (NaN observed), \
+                 not a fabricated value that happens to satisfy the check"
+            );
+            assert!(
+                item.passed,
+                "{signal}: unavailable is non-blocking by this gate's design"
+            );
+            assert!(
+                out.passed,
+                "{signal}: one unmeasured input must not sink an otherwise clean pool"
+            );
+        }
+    }
+
+    #[test]
+    fn test_measured_pass_and_unavailable_are_distinguishable() {
+        // Same signal, two different reasons it reads `passed`: a real clean measurement
+        // versus a check that never ran. `observed` is how a renderer (or a test) tells
+        // them apart -- a real pass is a real number, an unavailable check is NaN.
+        let mut measured = clean_inputs();
+        measured.token2022_has_permanent_delegate = Some(false);
+        let mut unmeasured = clean_inputs();
+        unmeasured.token2022_has_permanent_delegate = None;
+
+        let (_, rationale_measured) = evaluate(&measured, Regime::V1, &cfg());
+        let (_, rationale_unmeasured) = evaluate(&unmeasured, Regime::V1, &cfg());
+
+        let measured_item = rationale_measured
+            .iter()
+            .find(|r| r.signal == "token2022_no_permanent_delegate")
+            .expect("measured rationale present");
+        let unmeasured_item = rationale_unmeasured
+            .iter()
+            .find(|r| r.signal == "token2022_no_permanent_delegate")
+            .expect("unmeasured rationale present");
+
+        assert!(
+            !measured_item.observed.is_nan(),
+            "a genuinely measured clean value is a real number"
+        );
+        assert!(
+            unmeasured_item.observed.is_nan(),
+            "an unmeasured value is the NaN marker"
+        );
+        assert!(measured_item.passed);
+        assert!(unmeasured_item.passed);
     }
 }

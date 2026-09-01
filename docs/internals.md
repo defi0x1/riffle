@@ -323,13 +323,11 @@ pattern as `regime_state`/`volatility_state` without a new table. This is *not* 
 `IndicatorsWorker`'s own emission of `INFO`-kind signals, though: those are written every tick
 regardless of cooldown, since they are the audit trail, not an announcement -- only the
 `POTENTIAL`/`DEGRADING`/`GATE_FAIL` kinds `SignalsWorker` writes are subject to the cooldown check.
-One consequence of this design is worth stating plainly since it contradicts a comment elsewhere in
-the module doc: `docs/architecture.md` notes that the cooldown "is tracked in memory, per process,
-not in the database" -- that describes `SignalsWorker`'s previous design; the code as written reads
-the cooldown key from the persisted `signals` table via `last_signal_broadcast`, so a restart does
-*not* reset it. Regime and volatility state persisting across restarts and the signal cooldown
-persisting across restarts are, in the current code, the same pattern applied three times, not two
-persisted mechanisms next to one that resets.
+The cooldown key is read from the persisted `signals` table via `last_signal_broadcast`, so a
+restart does *not* reset it and a pool announced shortly before a restart is not re-announced
+immediately after one. Regime state, volatility state and the signal cooldown are the same
+persistence pattern applied three times, rather than two persisted mechanisms sitting next to one
+that forgets.
 
 ### Paper positions: open, mark, and outcome, on two independent cadences
 

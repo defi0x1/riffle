@@ -1,20 +1,23 @@
 # Configuration
 
-Every option below comes from a `clap::Parser` struct in the source tree, not from
-`config/*.example.yaml`. That distinction matters: the example YAML files are not actually read by
-any binary (there is no YAML-loading dependency anywhere in this workspace -- no `figment`, no
-`config` crate, nothing that turns a file into environment variables or CLI arguments). Every
-setting is a CLI flag and an environment variable of the same name; a config file is not a third
-surface today, whatever the file comments claim. See "Known gaps" at the end of this document.
-
-Each `clap` field with `#[arg(long, env)]` produces:
+Every option below comes from a `clap::Parser` struct in the source tree. Each field with
+`#[arg(long, env)]` produces:
 
 - a flag: the field name in kebab-case (`database_url` -> `--database-url`)
 - an environment variable: the field name in SCREAMING_SNAKE_CASE (`database_url` -> `DATABASE_URL`)
+- a key in a YAML file passed with `--config <path>`, in the same snake_case as the field name
+  (`database_url`)
 
-Flags win over environment variables when both are set. Run `cargo run --bin <binary> -- --help`
-against a built binary for the authoritative, always-current list -- this document is a guide to
-reading that output, not a replacement for it.
+Precedence, most to least authoritative: CLI flag > environment variable > config file > the
+field's own compiled default -- a config file only fills in a value that neither a flag nor a real
+environment variable already supplied. `--config` is deliberately CLI-only: its own path cannot
+come from an environment variable or from the file it names. An unrecognised key in a config file
+is an error naming the key, not a silent no-op. See `libraries/common/src/config.rs` for the
+implementation.
+
+Run `cargo run --bin <binary> -- --help` against a built binary for the authoritative,
+always-current list of flags and environment variables -- this document is a guide to reading that
+output, not a replacement for it.
 
 ## Secrets
 
@@ -115,7 +118,7 @@ Controls the two-stage screen/rank split described in [`docs/architecture.md`](a
 | `--geyser-commitment` / `GEYSER_COMMITMENT` | string | `confirmed` | no | Parsed at construction (`filters::parse_commitment`); an unrecognised value fails `GeyserSource::new` immediately, so the process never starts with an invalid commitment level. |
 
 Note the naming: the field is `geyser_x_token`, so the flag is `--geyser-x-token` and the
-environment variable is `GEYSER_X_TOKEN` -- not `GEYSER_TOKEN`. See "Known gaps" below.
+environment variable is `GEYSER_X_TOKEN` -- not `GEYSER_TOKEN`.
 
 ## `scorer`
 
@@ -259,8 +262,7 @@ Per-regime fields follow a fixed naming pattern: `_s` (Stable), `_v1` (establish
 
 Note the naming here too: the flags are `--bot-token` / `--allowed-chats`, not
 `--telegram-bot-token` / `--telegram-allowed-chats` -- `#[group(id = "telegram")]` only affects how
-`--help` groups the arguments, it does not prefix the flag or environment-variable names. See
-"Known gaps" below.
+`--help` groups the arguments, it does not prefix the flag or environment-variable names.
 
 ## `crawler`
 
@@ -319,28 +321,10 @@ an ingestion gap.
 Found while writing this document, listed here rather than silently corrected, since fixing them
 is out of scope for a documentation pass:
 
-- **`.env.example` has three wrong variable names.** It lists `TELEGRAM_BOT_TOKEN` and
-  `TELEGRAM_ALLOWED_CHATS`; the actual environment variables `bot` reads are `BOT_TOKEN` and
-  `ALLOWED_CHATS` (flattening a `#[group(...)]`-annotated struct does not prefix names). It also
-  lists `GEYSER_TOKEN`; the actual variable is `GEYSER_X_TOKEN`, matching the field name
-  `geyser_x_token`. Sourcing `.env.example` verbatim under those three names will not configure
-  the values it claims to.
-- **`.env.example` documents `JUPITER_PRICE_URL`**, which no config struct in this workspace
-  reads. The two mentions of Jupiter in the source (`bin/scorer/src/pipeline/universe.rs`,
-  `libraries/engine/src/risk_gate.rs`) are comments describing a data source the risk gate's
-  `other_venue_depth_ratio` input would come from if it were wired up; no code reads this
-  environment variable today.
-- **`config/*.example.yaml` describe a configuration surface that does not exist.** No dependency
-  in this workspace parses YAML into config (`grep` for `figment`, `config`, or `serde_yaml`
-  across every `Cargo.toml` returns nothing). The files also disagree with the real field names in
-  places a YAML loader would matter (`postgres.url` vs. the actual `database_url`; `metrics.listen_addr`
-  vs. the actual `metrics_port`; `source.rpc.poll_interval_state_ms` as milliseconds vs. the actual
-  `poll_interval_state` as an `humantime` duration string; `tick.risk_gate_s`, which does not
-  correspond to any field in `TickConfig`). Treat the example YAML files as illustrative only, and
-  this document (or `--help`) as the source of truth.
 - **No environment variable is picked up from `.env` automatically by any Rust binary.** `.env` is
   read automatically by `sqlx-cli` (so `make migrate` works after `cp .env.example .env`), but
   `indexer`, `scorer` and `bot` read only the real process environment -- there is no `dotenvy` (or
   similar) call anywhere in this workspace. Export the variables into your shell, pass them as
-  `VAR=value cargo run ...`, or use `docker compose`'s `env_file:` if you containerise these
-  binaries; a bare `.env` file sitting in the working directory does nothing for them on its own.
+  `VAR=value cargo run ...`, use a `--config` file, or use `docker compose`'s `env_file:` if you
+  containerise these binaries; a bare `.env` file sitting in the working directory does nothing for
+  them on its own.

@@ -118,10 +118,10 @@ nothing for it to read yet.
   the fact; see "A backfill that needs restarting" below for what it can and cannot recover.
 - `scorer`: `regime_state` and `volatility_state` persist per pool/timeframe, so a restart does not
   reset the regime classifier's hysteresis clock or the volatility EWMAs to zero. `SignalsWorker`'s
-  cooldown does **not** persist -- it is in-memory, per-process -- so a restart can cause a still-true
-  condition to be re-announced sooner than `signal_cooldown` after the restart. Paper positions
-  re-derive "already open" from the database on every tick, so they need no cursor to resume
-  correctly.
+  cooldown persists too -- it is read back from the `signals` table itself
+  (`storage::queries::last_signal_broadcast`) rather than kept in memory, so a restart does not
+  cause a still-true condition to be re-announced early. Paper positions re-derive "already open"
+  from the database on every tick, so they need no cursor to resume correctly.
 - `bot`: stateless beyond mutes (persisted in `muted_pools`) and rate-limit bookkeeping (in-memory,
   resets on restart -- harmless, it only delays the very next message per chat by up to ~1s).
 

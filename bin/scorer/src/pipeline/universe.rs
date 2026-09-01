@@ -73,23 +73,30 @@ pub fn risk_gate_inputs(pool: &PoolForScoring, now: DateTime<Utc>) -> RiskGateIn
         freeze_authority_present: base_freeze_authority.is_some(),
         freeze_authority_is_documented_multisig: false,
         // Token-2022 extension flags are not in `PoolForScoring` yet -- `tokens.extensions`
-        // is read as JSON and would need its own decode; conservatively "no flag observed"
-        // rather than fabricating a pass.
-        token2022_has_permanent_delegate: false,
-        token2022_has_transfer_hook: false,
-        token2022_transfer_fee_bps: 0,
+        // is read as JSON and would need its own decode. This pass does not read them, so
+        // it has not observed a permanent delegate, a transfer hook or a transfer fee one
+        // way or the other; `None` renders these unavailable rather than reporting the
+        // pass a real decode has never confirmed.
+        token2022_has_permanent_delegate: None,
+        token2022_has_transfer_hook: None,
+        token2022_transfer_fee_bps: None,
         top10_holder_share: base_top10,
         top1_holder_share: base_top1,
         insider_bundle_flagged: None,
         other_venue_depth_ratio: None,
         cex_listed: false,
-        // No fee_param_updates read in this pass -- assume stable rather than flag every pool.
-        days_since_last_fee_param_change: 9_999.0,
+        // fee_param_updates is never read in this pass, so "days since last change" has no
+        // measurement to report -- `None` renders this unavailable rather than asserting
+        // stability nothing here checked.
+        days_since_last_fee_param_change: None,
         pool_status_enabled: pool.status == 0,
         activation_passed: true,
         quote_asset,
-        signer_top_n_share_of_24h_volume: 0.0,
-        round_trip_ratio: 0.0,
+        // The wash-trading signer scan and round-trip ratio are not computed in this pass
+        // -- `None` renders both unavailable rather than reporting the clean value a real
+        // computation has never produced.
+        signer_top_n_share_of_24h_volume: None,
+        round_trip_ratio: None,
         age_hours: age_days(pool, now) * 24.0,
     }
 }
@@ -159,6 +166,38 @@ mod tests {
         let inputs = risk_gate_inputs(&pool, now);
         assert_eq!(inputs.quote_asset, QuoteAsset::Sol);
         assert!(inputs.mint_authority_present);
+    }
+
+    /// The regression test for the original defect: this pass does not read Token-2022
+    /// extensions, wash-trading volume, or fee-parameter-change history, so it must not
+    /// report any of those checks as measured -- whether that measurement would read as a
+    /// pass (`false`/`0`/`0.0`) or, for the fee-change check, a value chosen specifically
+    /// because it always passes (`9_999.0` days). If a future edit reintroduces a
+    /// hard-coded value here, the corresponding `assert_eq!(.., None)` below fails.
+    #[test]
+    fn test_unmeasured_risk_inputs_are_reported_unavailable_not_fabricated_passes() {
+        let pool = base_pool();
+        let now = DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let inputs = risk_gate_inputs(&pool, now);
+
+        assert_eq!(
+            inputs.token2022_has_permanent_delegate, None,
+            "never decoded in this pass -- must not be reported as a measured `false`"
+        );
+        assert_eq!(inputs.token2022_has_transfer_hook, None);
+        assert_eq!(inputs.token2022_transfer_fee_bps, None);
+        assert_eq!(
+            inputs.signer_top_n_share_of_24h_volume, None,
+            "wash-screen signer scan never runs in this pass"
+        );
+        assert_eq!(inputs.round_trip_ratio, None);
+        assert_eq!(
+            inputs.days_since_last_fee_param_change, None,
+            "fee_param_updates is never read in this pass -- must not fabricate a large \
+             'stable' value"
+        );
     }
 
     #[test]
