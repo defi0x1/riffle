@@ -4,6 +4,8 @@ pub use domain::*;
 mod config;
 pub use config::*;
 
+mod bin_array;
+
 pub mod geyser;
 pub mod rpc;
 

@@ -160,11 +160,16 @@ pub fn event_stream(config: &GeyserConfig, filter: EventFilter) -> BoxStream<'st
     match ConnectionConfig::new(config) {
         Ok(conn_cfg) => match filters::parse_commitment(&config.geyser_commitment) {
             Ok(commitment) => {
+                // The event stream watches the whole program's transactions rather than a
+                // set that moves with any one pool's active bin, so it never needs to push
+                // an updated subscription onto the open sink.
+                let (_resubscribe_tx, resubscribe_rx) = mpsc::channel(1);
                 tokio::spawn(run_resilient(
                     conn_cfg,
                     ReconnectPolicy::default(),
                     move |from_slot| filters::event_subscribe_request(commitment, from_slot),
                     raw_tx,
+                    resubscribe_rx,
                 ));
             }
             Err(e) => tracing::error!(error = ?e, "Cannot start Geyser event stream"),

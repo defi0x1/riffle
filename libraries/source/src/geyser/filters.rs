@@ -10,6 +10,8 @@ use yellowstone_grpc_proto::prelude::{
     subscribe_request_filter_accounts_filter_memcmp::Data as MemcmpData,
 };
 
+use crate::bin_array::surrounding_bin_arrays;
+
 // Named filter keys. Yellowstone unions matches across the entries in a map (an account
 // hits the subscription if it matches any named filter), but ANDs the conditions inside
 // one entry -- so LbPair and BinArray, which never share a discriminator, each need their
@@ -53,19 +55,35 @@ fn lb_pair_account_filter(pools: &[Pubkey]) -> SubscribeRequestFilterAccounts {
     }
 }
 
-// BinArray addresses are PDAs derived from a pool's active bin, which we don't know ahead
-// of subscribing, so this can't be scoped by explicit account list the way LbPair is. It
-// matches every BinArray on the program instead; the watched set is applied client-side
-// once the account is decoded and its owning pool is known.
-fn bin_array_account_filter() -> SubscribeRequestFilterAccounts {
-    SubscribeRequestFilterAccounts {
-        account: Vec::new(),
+// BinArray PDAs are derivable once a pool's active bin is known (the same derivation the
+// RPC backend uses, see bin_array.rs), so this is scoped to exactly the three arrays either
+// side of each watched pool's active bin -- never the whole program's BinArray traffic. A
+// pool with no known active bin yet contributes nothing here; it picks up its arrays on the
+// next resubscribe once an LbPair update reports one. Returns None rather than a filter with
+// an empty account list, because an empty list on this field means "unconstrained" in the
+// wire protocol, not "match nothing".
+fn bin_array_account_filter(
+    watched: &[(Pubkey, Option<i32>)],
+) -> Option<SubscribeRequestFilterAccounts> {
+    let accounts: Vec<String> = watched
+        .iter()
+        .filter_map(|(pool, active_bin_id)| active_bin_id.map(|id| (pool, id)))
+        .flat_map(|(pool, id)| surrounding_bin_arrays(pool, id))
+        .map(|pda| pda.to_string())
+        .collect();
+
+    if accounts.is_empty() {
+        return None;
+    }
+
+    Some(SubscribeRequestFilterAccounts {
+        account: accounts,
         owner: vec![lb_clmm::ID.to_string()],
         filters: vec![discriminator_filter(
             dlmm_decode::BIN_ARRAY_DISCRIMINATOR.as_slice(),
         )],
         nonempty_txn_signature: None,
-    }
+    })
 }
 
 fn broad_transactions_filter() -> SubscribeRequestFilterTransactions {
@@ -90,13 +108,17 @@ fn health_slots_filter() -> SubscribeRequestFilterSlots {
 }
 
 pub fn state_subscribe_request(
-    pools: &[Pubkey],
+    watched: &[(Pubkey, Option<i32>)],
     commitment: CommitmentLevel,
     from_slot: Option<u64>,
 ) -> SubscribeRequest {
+    let pools: Vec<Pubkey> = watched.iter().map(|(pool, _)| *pool).collect();
+
     let mut accounts = HashMap::new();
-    accounts.insert(LB_PAIR_FILTER.to_string(), lb_pair_account_filter(pools));
-    accounts.insert(BIN_ARRAY_FILTER.to_string(), bin_array_account_filter());
+    accounts.insert(LB_PAIR_FILTER.to_string(), lb_pair_account_filter(&pools));
+    if let Some(bin_array_filter) = bin_array_account_filter(watched) {
+        accounts.insert(BIN_ARRAY_FILTER.to_string(), bin_array_filter);
+    }
 
     let mut slots = HashMap::new();
     slots.insert(HEALTH_SLOTS_FILTER.to_string(), health_slots_filter());
@@ -160,16 +182,28 @@ mod tests {
     }
 
     #[test]
-    fn test_state_request_has_two_account_filters() {
-        let req = state_subscribe_request(&[pool(1), pool(2)], CommitmentLevel::Confirmed, None);
+    fn test_state_request_has_both_filters_once_an_active_bin_is_known() {
+        let req = state_subscribe_request(&[(pool(1), Some(0))], CommitmentLevel::Confirmed, None);
         assert_eq!(req.accounts.len(), 2);
         assert!(req.accounts.contains_key(LB_PAIR_FILTER));
         assert!(req.accounts.contains_key(BIN_ARRAY_FILTER));
     }
 
     #[test]
+    fn test_state_request_omits_bin_array_filter_until_an_active_bin_is_known() {
+        let req = state_subscribe_request(&[(pool(1), None)], CommitmentLevel::Confirmed, None);
+        assert_eq!(req.accounts.len(), 1);
+        assert!(req.accounts.contains_key(LB_PAIR_FILTER));
+        assert!(!req.accounts.contains_key(BIN_ARRAY_FILTER));
+    }
+
+    #[test]
     fn test_lb_pair_filter_scoped_to_watched_pools() {
-        let req = state_subscribe_request(&[pool(1), pool(2)], CommitmentLevel::Confirmed, None);
+        let req = state_subscribe_request(
+            &[(pool(1), None), (pool(2), None)],
+            CommitmentLevel::Confirmed,
+            None,
+        );
         let lb_pair = &req.accounts[LB_PAIR_FILTER];
         assert_eq!(
             lb_pair.account,
@@ -179,16 +213,52 @@ mod tests {
     }
 
     #[test]
-    fn test_bin_array_filter_has_no_explicit_accounts() {
-        let req = state_subscribe_request(&[pool(1)], CommitmentLevel::Confirmed, None);
+    fn test_bin_array_filter_carries_the_derived_pda_accounts() {
+        let req = state_subscribe_request(&[(pool(1), Some(42))], CommitmentLevel::Confirmed, None);
         let bin_array = &req.accounts[BIN_ARRAY_FILTER];
-        assert!(bin_array.account.is_empty());
+        let expected: Vec<String> = surrounding_bin_arrays(&pool(1), 42)
+            .into_iter()
+            .map(|pda| pda.to_string())
+            .collect();
+        assert_eq!(bin_array.account, expected);
         assert_eq!(bin_array.owner, vec![lb_clmm::ID.to_string()]);
     }
 
     #[test]
+    fn test_bin_array_filter_matches_the_rpc_backend_derivation() {
+        // Both backends derive watched BinArrays from the same shared function, so a pool
+        // watched at the same active bin on either backend is guaranteed to watch the same
+        // three arrays -- this is what stops them from drifting apart.
+        let req =
+            state_subscribe_request(&[(pool(9), Some(-17))], CommitmentLevel::Confirmed, None);
+        let bin_array = &req.accounts[BIN_ARRAY_FILTER];
+        let rpc_equivalent: Vec<String> = surrounding_bin_arrays(&pool(9), -17)
+            .into_iter()
+            .map(|pda| pda.to_string())
+            .collect();
+        assert_eq!(bin_array.account, rpc_equivalent);
+    }
+
+    #[test]
+    fn test_bin_array_filter_only_covers_pools_with_a_known_active_bin() {
+        let req = state_subscribe_request(
+            &[(pool(1), Some(0)), (pool(2), None)],
+            CommitmentLevel::Confirmed,
+            None,
+        );
+        let bin_array = &req.accounts[BIN_ARRAY_FILTER];
+        // exactly the 3 arrays for pool(1); pool(2) has no known active bin yet
+        assert_eq!(bin_array.account.len(), 3);
+        let pool1_arrays: Vec<String> = surrounding_bin_arrays(&pool(1), 0)
+            .into_iter()
+            .map(|pda| pda.to_string())
+            .collect();
+        assert_eq!(bin_array.account, pool1_arrays);
+    }
+
+    #[test]
     fn test_each_account_filter_carries_its_own_discriminator_not_both() {
-        let req = state_subscribe_request(&[pool(1)], CommitmentLevel::Confirmed, None);
+        let req = state_subscribe_request(&[(pool(1), Some(0))], CommitmentLevel::Confirmed, None);
         for name in [LB_PAIR_FILTER, BIN_ARRAY_FILTER] {
             assert_eq!(req.accounts[name].filters.len(), 1);
         }

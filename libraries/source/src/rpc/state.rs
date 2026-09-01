@@ -14,38 +14,17 @@ use tokio::sync::{Mutex, Semaphore};
 use dlmm_decode::{decode_bin_array, decode_lb_pair};
 use metrics::{RPC_CALL_DURATION_SECS, RPC_CALL_TOTAL};
 
+use crate::bin_array::surrounding_bin_arrays;
 use crate::{StateUpdate, WatchSet};
 
 use super::batching::{AccountGroup, MAX_POOL_KEYS_PER_BATCH, pack_groups};
 use super::clock::{CLOCK_SYSVAR, decode_clock};
 
-fn bin_array_pda(lb_pair: &Pubkey, index: i64) -> Pubkey {
-    Pubkey::find_program_address(
-        &[
-            lb_clmm::utils::seeds::BIN_ARRAY,
-            lb_pair.as_ref(),
-            &index.to_le_bytes(),
-        ],
-        &lb_clmm::ID,
-    )
-    .0
-}
-
 fn account_group_for(pool: Pubkey, last_active_bin_id: Option<i32>) -> AccountGroup {
     let Some(active_bin_id) = last_active_bin_id else {
         return AccountGroup::lb_pair_only(pool);
     };
-
-    // Only fails on i32 overflow at the extreme edge of the bin id range, which real pools
-    // never reach; falling back to array 0 there is harmless since the next tick corrects it.
-    let center =
-        lb_clmm::state::bin::BinArray::bin_id_to_bin_array_index(active_bin_id).unwrap_or(0) as i64;
-    let bin_arrays = [
-        bin_array_pda(&pool, center - 1),
-        bin_array_pda(&pool, center),
-        bin_array_pda(&pool, center + 1),
-    ];
-    AccountGroup::with_bin_arrays(pool, bin_arrays)
+    AccountGroup::with_bin_arrays(pool, surrounding_bin_arrays(&pool, active_bin_id))
 }
 
 pub struct StatePoller {

@@ -116,7 +116,10 @@ pub(super) struct RunOutcome {
 /// one sends a ping up the sink (itself timed out, so a wedged sink can't block the loop
 /// forever); a longer one is reset only by an inbound ping or pong and, if it fires, the
 /// stream is declared dead rather than left to hang silently -- the actual Geyser failure
-/// mode, which looks nothing like a disconnect.
+/// mode, which looks nothing like a disconnect. `resubscribe_rx` carries updated
+/// `SubscribeRequest`s (e.g. a watched pool's active bin moving to a different BinArray) out
+/// to the same open sink, since Yellowstone accepts a fresh request on a live connection
+/// without needing a reconnect.
 ///
 /// Generic over the sink/stream so this can run against fakes in tests without a live
 /// connection; the real caller passes the tonic-backed pair from `subscribe_with_request`.
@@ -125,6 +128,7 @@ pub(super) async fn run_once<Tx, Rx, RxErr>(
     mut stream: Rx,
     cfg: LivenessConfig,
     tx_out: &mpsc::Sender<SubscribeUpdate>,
+    resubscribe_rx: &mut mpsc::Receiver<SubscribeRequest>,
 ) -> RunOutcome
 where
     Tx: Sink<SubscribeRequest> + Unpin,
@@ -141,9 +145,37 @@ where
     let dead_at = tokio::time::sleep(cfg.pong_timeout);
     tokio::pin!(dead_at);
     let mut ping_id: i32 = 0;
+    // once the resubscribe sender is dropped there is nothing left to send, ever; without
+    // this guard a closed mpsc channel would return None on every poll and spin the loop
+    let mut resubscribe_open = true;
 
     loop {
         tokio::select! {
+            req = resubscribe_rx.recv(), if resubscribe_open => {
+                match req {
+                    Some(req) => {
+                        match tokio::time::timeout(cfg.ping_send_timeout, sink.send(req)).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                return RunOutcome {
+                                    last_slot: slots.high_water_mark(),
+                                    result: Err(StreamError::Failed(format!("Sending Geyser resubscribe: {e}"))),
+                                };
+                            }
+                            Err(_) => {
+                                return RunOutcome {
+                                    last_slot: slots.high_water_mark(),
+                                    result: Err(StreamError::Failed(format!(
+                                        "Sending Geyser resubscribe timed out after {:?}; sink appears wedged",
+                                        cfg.ping_send_timeout
+                                    ))),
+                                };
+                            }
+                        }
+                    }
+                    None => resubscribe_open = false,
+                }
+            }
             _ = ping_ticker.tick() => {
                 ping_id = ping_id.wrapping_add(1);
                 let req = SubscribeRequest {
@@ -266,6 +298,7 @@ pub(super) async fn run_resilient(
     policy: ReconnectPolicy,
     mut build_request: impl FnMut(Option<u64>) -> SubscribeRequest,
     tx_out: mpsc::Sender<SubscribeUpdate>,
+    mut resubscribe_rx: mpsc::Receiver<SubscribeRequest>,
 ) {
     let mut last_slot: Option<u64> = None;
     let mut backoff = policy.backoff();
@@ -275,7 +308,9 @@ pub(super) async fn run_resilient(
             Ok(mut client) => {
                 let request = build_request(last_slot);
                 match client.subscribe_with_request(Some(request)).await {
-                    Ok((sink, stream)) => run_once(sink, stream, cfg.liveness, &tx_out).await,
+                    Ok((sink, stream)) => {
+                        run_once(sink, stream, cfg.liveness, &tx_out, &mut resubscribe_rx).await
+                    }
                     Err(e) => RunOutcome {
                         last_slot: None,
                         result: Err(StreamError::Failed(format!(
@@ -443,6 +478,12 @@ mod tests {
         }
     }
 
+    // A receiver whose sender is already dropped, for tests that don't exercise
+    // resubscribing.
+    fn closed_resubscribe_channel() -> mpsc::Receiver<SubscribeRequest> {
+        mpsc::channel(1).1
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_ping_is_sent_at_the_configured_interval() {
         let (req_tx, mut req_rx) = fmpsc::unbounded::<SubscribeRequest>();
@@ -455,7 +496,11 @@ mod tests {
             pong_timeout: Duration::from_secs(600),
         };
 
-        let handle = tokio::spawn(async move { run_once(req_tx, upd_rx, cfg, &out_tx).await });
+        let mut resub_rx = closed_resubscribe_channel();
+        let handle =
+            tokio::spawn(
+                async move { run_once(req_tx, upd_rx, cfg, &out_tx, &mut resub_rx).await },
+            );
 
         tokio::time::advance(Duration::from_secs(5)).await;
         let first = req_rx.next().await.expect("expected a ping request");
@@ -481,7 +526,11 @@ mod tests {
             pong_timeout: Duration::from_secs(30),
         };
 
-        let handle = tokio::spawn(async move { run_once(req_tx, upd_rx, cfg, &out_tx).await });
+        let mut resub_rx = closed_resubscribe_channel();
+        let handle =
+            tokio::spawn(
+                async move { run_once(req_tx, upd_rx, cfg, &out_tx, &mut resub_rx).await },
+            );
 
         tokio::time::advance(Duration::from_secs(31)).await;
         let outcome = handle.await.unwrap();
@@ -503,7 +552,11 @@ mod tests {
             pong_timeout: Duration::from_secs(30),
         };
 
-        let handle = tokio::spawn(async move { run_once(req_tx, upd_rx, cfg, &out_tx).await });
+        let mut resub_rx = closed_resubscribe_channel();
+        let handle =
+            tokio::spawn(
+                async move { run_once(req_tx, upd_rx, cfg, &out_tx, &mut resub_rx).await },
+            );
 
         // without a reset this would exceed the 30s pong_timeout at the second advance
         for i in 0..3 {
@@ -544,7 +597,11 @@ mod tests {
             pong_timeout: Duration::from_secs(30),
         };
 
-        let _handle = tokio::spawn(async move { run_once(req_tx, upd_rx, cfg, &out_tx).await });
+        let mut resub_rx = closed_resubscribe_channel();
+        let _handle =
+            tokio::spawn(
+                async move { run_once(req_tx, upd_rx, cfg, &out_tx, &mut resub_rx).await },
+            );
 
         upd_tx.send(Ok(slot_update(1))).await.unwrap();
         upd_tx.send(Ok(account_update(1))).await.unwrap();
@@ -557,5 +614,40 @@ mod tests {
             forwarded.update_oneof,
             Some(UpdateOneof::Account(_))
         ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_resubscribe_request_is_forwarded_onto_the_open_sink() {
+        let (req_tx, mut req_rx) = fmpsc::unbounded::<SubscribeRequest>();
+        let (_upd_tx, upd_rx) = fmpsc::unbounded::<Result<SubscribeUpdate, String>>();
+        let (out_tx, _out_rx) = mpsc::channel(8);
+        let (resub_tx, mut resub_rx) = mpsc::channel::<SubscribeRequest>(4);
+
+        let cfg = LivenessConfig {
+            ping_interval: Duration::from_secs(1_000_000),
+            ping_send_timeout: Duration::from_secs(2),
+            pong_timeout: Duration::from_secs(600),
+        };
+
+        let handle =
+            tokio::spawn(
+                async move { run_once(req_tx, upd_rx, cfg, &out_tx, &mut resub_rx).await },
+            );
+
+        resub_tx
+            .send(SubscribeRequest {
+                from_slot: Some(999),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let forwarded = req_rx
+            .next()
+            .await
+            .expect("expected the resubscribe forwarded");
+        assert_eq!(forwarded.from_slot, Some(999));
+
+        handle.abort();
     }
 }

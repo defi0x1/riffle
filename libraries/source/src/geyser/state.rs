@@ -1,14 +1,18 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::stream::{self, BoxStream, StreamExt};
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc;
-use yellowstone_grpc_proto::prelude::{SubscribeUpdate, subscribe_update::UpdateOneof};
+use yellowstone_grpc_proto::prelude::{
+    CommitmentLevel, SubscribeRequest, SubscribeUpdate, subscribe_update::UpdateOneof,
+};
 
 use dlmm_decode::{BinArrayState, PoolState, decode_bin_array, decode_lb_pair};
 use metrics::DECODE_ERROR_TOTAL;
 
+use crate::bin_array::bin_array_index;
 use crate::{GeyserConfig, StateUpdate, WatchSet};
 
 use super::coalesce::SlotCoalescer;
@@ -19,6 +23,11 @@ const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 const FLUSH_SIZE: usize = 64;
 const RAW_CHANNEL_CAPACITY: usize = 1024;
 const OUT_CHANNEL_CAPACITY: usize = 256;
+const RESUBSCRIBE_CHANNEL_CAPACITY: usize = 8;
+// The three-array window already covers one crossing's worth of active-bin movement, so a
+// pool sitting right on a boundary and flapping between two arrays can be left alone for a
+// while rather than resubscribed on every single update.
+const RESUBSCRIBE_DEBOUNCE: Duration = Duration::from_secs(3);
 
 #[derive(Clone)]
 enum RawKind {
@@ -32,6 +41,36 @@ struct RawAccountUpdate {
     pool: Pubkey,
     slot: u64,
     kind: RawKind,
+}
+
+// Tracks, per pool, which BinArray index the live subscription is currently centred on, and
+// decides when a pool's active bin has moved somewhere that subscription no longer covers.
+struct ResubscribeTracker {
+    subscribed_index: HashMap<Pubkey, i64>,
+}
+
+impl ResubscribeTracker {
+    fn new() -> Self {
+        Self {
+            subscribed_index: HashMap::new(),
+        }
+    }
+
+    // True if `active_bin_id` now falls in a different BinArray than the one this pool's
+    // subscription is centred on -- including a pool never subscribed for bin arrays at all.
+    fn observe(&self, pool: Pubkey, active_bin_id: i32) -> bool {
+        let new_index = bin_array_index(active_bin_id);
+        match self.subscribed_index.get(&pool) {
+            Some(&current) => current != new_index,
+            None => true,
+        }
+    }
+
+    // Records what a resubscribe actually sent, so future crossings are measured against it.
+    fn mark_subscribed(&mut self, pool: Pubkey, active_bin_id: i32) {
+        self.subscribed_index
+            .insert(pool, bin_array_index(active_bin_id));
+    }
 }
 
 fn decode_account_update(
@@ -63,8 +102,9 @@ fn decode_account_update(
     if update.filters.iter().any(|f| f == BIN_ARRAY_FILTER) {
         return match decode_bin_array(&info.data) {
             Ok(state) => {
-                // BinArray subscriptions can't be scoped server-side to the watched set
-                // (see filters.rs), so the narrowing happens here once the pool is known.
+                // The subscription is already scoped server-side to the derived PDAs for
+                // watched pools; this is a safety net against a stale in-flight request
+                // during a resubscribe, not the primary narrowing mechanism.
                 if !watched.contains(&state.lb_pair) {
                     return None;
                 }
@@ -145,15 +185,34 @@ async fn flush(
     true
 }
 
-async fn coalesce_loop(
-    mut raw_rx: mpsc::Receiver<SubscribeUpdate>,
+struct CoalesceLoopArgs {
+    raw_rx: mpsc::Receiver<SubscribeUpdate>,
     watched: HashSet<Pubkey>,
     out_tx: mpsc::Sender<StateUpdate>,
-) {
+    resubscribe_tx: mpsc::Sender<SubscribeRequest>,
+    known_active_bin: Arc<Mutex<HashMap<Pubkey, i32>>>,
+    commitment: CommitmentLevel,
+}
+
+async fn coalesce_loop(args: CoalesceLoopArgs) {
+    let CoalesceLoopArgs {
+        mut raw_rx,
+        watched,
+        out_tx,
+        resubscribe_tx,
+        known_active_bin,
+        commitment,
+    } = args;
+
     let mut coalescer: SlotCoalescer<Pubkey, RawAccountUpdate> = SlotCoalescer::new();
     let mut last_block_time: HashMap<Pubkey, i64> = HashMap::new();
     let mut flush_interval = tokio::time::interval(FLUSH_INTERVAL);
     flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    let mut resubscribe = ResubscribeTracker::new();
+    let mut resubscribe_dirty = false;
+    let debounce = tokio::time::sleep(RESUBSCRIBE_DEBOUNCE);
+    tokio::pin!(debounce);
 
     loop {
         tokio::select! {
@@ -162,9 +221,33 @@ async fn coalesce_loop(
                     return;
                 }
             }
+            () = &mut debounce, if resubscribe_dirty => {
+                resubscribe_dirty = false;
+                let snapshot: HashMap<Pubkey, i32> = known_active_bin.lock().unwrap().clone();
+                for (pool, active_bin_id) in &snapshot {
+                    if watched.contains(pool) {
+                        resubscribe.mark_subscribed(*pool, *active_bin_id);
+                    }
+                }
+                let watched_state: Vec<(Pubkey, Option<i32>)> = watched
+                    .iter()
+                    .map(|pool| (*pool, snapshot.get(pool).copied()))
+                    .collect();
+                let request = filters::state_subscribe_request(&watched_state, commitment, None);
+                if resubscribe_tx.send(request).await.is_err() {
+                    return;
+                }
+            }
             maybe_update = raw_rx.recv() => {
                 let Some(update) = maybe_update else { return };
                 if let Some(raw) = decode_account_update(update, &watched) {
+                    if let RawKind::LbPair(state) = &raw.kind {
+                        known_active_bin.lock().unwrap().insert(raw.pool, state.active_bin_id);
+                        if resubscribe.observe(raw.pool, state.active_bin_id) {
+                            resubscribe_dirty = true;
+                            debounce.as_mut().reset(tokio::time::Instant::now() + RESUBSCRIBE_DEBOUNCE);
+                        }
+                    }
                     coalescer.offer(raw.account, raw.slot, raw);
                     if coalescer.len() >= FLUSH_SIZE
                         && !flush(&mut coalescer, &mut last_block_time, &out_tx).await
@@ -178,30 +261,54 @@ async fn coalesce_loop(
 }
 
 pub fn state_stream(config: &GeyserConfig, watched: WatchSet) -> BoxStream<'static, StateUpdate> {
+    let conn_cfg = match ConnectionConfig::new(config) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(error = ?e, "Cannot start Geyser state stream");
+            return stream::empty().boxed();
+        }
+    };
+    let commitment = match filters::parse_commitment(&config.geyser_commitment) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(error = ?e, "Cannot start Geyser state stream");
+            return stream::empty().boxed();
+        }
+    };
+
     let (raw_tx, raw_rx) = mpsc::channel(RAW_CHANNEL_CAPACITY);
     let (out_tx, out_rx) = mpsc::channel(OUT_CHANNEL_CAPACITY);
+    let (resubscribe_tx, resubscribe_rx) = mpsc::channel(RESUBSCRIBE_CHANNEL_CAPACITY);
 
     let watched_set: HashSet<Pubkey> = watched.pools.iter().copied().collect();
+    let known_active_bin: Arc<Mutex<HashMap<Pubkey, i32>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    match ConnectionConfig::new(config) {
-        Ok(conn_cfg) => match filters::parse_commitment(&config.geyser_commitment) {
-            Ok(commitment) => {
-                let pools = watched.pools.clone();
-                tokio::spawn(run_resilient(
-                    conn_cfg,
-                    ReconnectPolicy::default(),
-                    move |from_slot| {
-                        filters::state_subscribe_request(&pools, commitment, from_slot)
-                    },
-                    raw_tx,
-                ));
-            }
-            Err(e) => tracing::error!(error = ?e, "Cannot start Geyser state stream"),
+    let pools = watched.pools.clone();
+    let known_active_bin_for_build = known_active_bin.clone();
+    tokio::spawn(run_resilient(
+        conn_cfg,
+        ReconnectPolicy::default(),
+        move |from_slot| {
+            let snapshot = known_active_bin_for_build.lock().unwrap();
+            let watched_state: Vec<(Pubkey, Option<i32>)> = pools
+                .iter()
+                .map(|pool| (*pool, snapshot.get(pool).copied()))
+                .collect();
+            drop(snapshot);
+            filters::state_subscribe_request(&watched_state, commitment, from_slot)
         },
-        Err(e) => tracing::error!(error = ?e, "Cannot start Geyser state stream"),
-    }
+        raw_tx,
+        resubscribe_rx,
+    ));
 
-    tokio::spawn(coalesce_loop(raw_rx, watched_set, out_tx));
+    tokio::spawn(coalesce_loop(CoalesceLoopArgs {
+        raw_rx,
+        watched: watched_set,
+        out_tx,
+        resubscribe_tx,
+        known_active_bin,
+        commitment,
+    }));
 
     stream::unfold(out_rx, |mut rx| async move {
         rx.recv().await.map(|item| (item, rx))
@@ -326,5 +433,35 @@ mod tests {
         let mut cache = HashMap::new();
         let updates = group_into_state_updates(items, &mut cache);
         assert_eq!(updates.len(), 2);
+    }
+
+    #[test]
+    fn test_resubscribe_tracker_triggers_the_first_time_a_pool_is_observed() {
+        let tracker = ResubscribeTracker::new();
+        assert!(tracker.observe(pool(1), 0));
+    }
+
+    #[test]
+    fn test_resubscribe_tracker_stays_quiet_within_the_subscribed_array() {
+        let mut tracker = ResubscribeTracker::new();
+        tracker.mark_subscribed(pool(1), 0);
+        assert!(!tracker.observe(pool(1), 0));
+    }
+
+    #[test]
+    fn test_resubscribe_tracker_triggers_on_crossing_into_a_different_array() {
+        let mut tracker = ResubscribeTracker::new();
+        tracker.mark_subscribed(pool(1), 0);
+        // far enough from bin 0 to certainly land in a different BinArray
+        assert!(tracker.observe(pool(1), 100_000));
+    }
+
+    #[test]
+    fn test_resubscribe_tracker_is_quiet_again_once_marked_at_the_new_position() {
+        let mut tracker = ResubscribeTracker::new();
+        tracker.mark_subscribed(pool(1), 0);
+        assert!(tracker.observe(pool(1), 100_000));
+        tracker.mark_subscribed(pool(1), 100_000);
+        assert!(!tracker.observe(pool(1), 100_000));
     }
 }
