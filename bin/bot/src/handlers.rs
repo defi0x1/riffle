@@ -623,8 +623,9 @@ async fn open(
     };
 
     let width = i32::from(width);
-    // Integer-divide the width around the active bin; a width above 1 that is even leans one
-    // extra bin below the active bin rather than above it, an arbitrary but fixed tie-break.
+    // Integer-divide the width around the active bin. An even width cannot be centred exactly,
+    // so the extra bin lands above the active bin: width 20 on bin 1000 spans 991..=1010, nine
+    // below and ten above. An arbitrary but fixed tie-break.
     // `lower <= upper` always holds by construction -- there are no two independently supplied
     // bin ids here for a caller to invert.
     let lower_bin_id = active.bin_id - (width - 1) / 2;

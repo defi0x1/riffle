@@ -51,6 +51,9 @@ hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
 percent-encoding = "2"
+# Decoding self-CPI event instruction data out of a fetched transaction's inner instructions --
+# the same encoding `bin/crawler`'s equivalent decode step already relies on.
+bs58 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

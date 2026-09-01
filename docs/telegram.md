@@ -2,15 +2,32 @@
 
 A walkthrough for taking the `bot` binary from nothing to answering commands in a real chat.
 Everything here was read out of `bin/bot/src/` -- `main.rs`, `cli.rs`, `config.rs`, `auth.rs`,
-`handlers.rs`, `render/`, `worker.rs`, `ratelimit.rs`, `mute.rs` -- and cross-checked against
-`config/bot.example.yaml` and `.env.example`. The full flag reference for every binary, including
-`bot`, lives in [`docs/configuration.md`](configuration.md); this document is only about the
-Telegram-facing parts.
+`handlers.rs`, `render/`, `worker.rs`, `ratelimit.rs`, `mute.rs`, `secret_guard.rs`, `shape.rs` --
+and cross-checked against `config/bot.example.yaml`, `.env.example`, and `miniapp/README.md`. The
+full flag reference for every binary, including `bot`, lives in
+[`docs/configuration.md`](configuration.md); this document is only about the Telegram-facing
+parts.
 
-The bot is read-only. It never writes indicators, never sizes a position, never moves anything --
-it renders rows that `scorer` already computed and persisted. The two exceptions are `/watch` and
-`/mute`, which write an operator decision (force/release tier-1 membership, suppress a signal),
-never a computed value.
+Commands split into two tiers, and the split matters more than any individual command's syntax:
+
+- **Read-only commands** -- `/top`, `/volume`, `/potential`, `/pool`, `/why`, `/watch`, `/mute`,
+  `/status`, `/wallet`, `/balance`, `/positions`, `/profit` -- answer entirely in the chat. Most
+  render rows `scorer` already computed and persisted; `/watch`, `/mute`, and `/wallet` write a
+  small operator/user decision (force tier-1 membership, suppress a signal, register a public
+  key), never a computed ranking value, and none of them ever moves funds.
+- **Fund-moving commands** -- `/open`, `/add`, `/remove`, `/claim`, `/close` -- never move funds
+  either, by construction. Each one only ever *proposes*: it checks the caller owns what they are
+  acting on, applies the same risk gate `/potential` applies, renders exactly what would happen,
+  and hands back a button that deep-links into the Telegram Mini App. Approval and signing happen
+  there, on the user's own device -- the chat cannot sign anything, there is no signing-capable
+  type anywhere in this crate (enforced by `scripts/keyless-guard.sh`, see
+  [`docs/security.md`](security.md)), and the bot never learns whether the button was even
+  tapped. The user reviews the proposal in the Mini App, signs or declines, and is sent back to
+  the chat afterwards. This bot never has, and by design never can have, a user's private key.
+
+Read [`docs/security.md`](security.md) before running this for real -- in particular, never paste
+a private key or recovery phrase into this chat, or into any chat, ever; see
+["Never paste a key"](#never-paste-a-key) below for what happens if you do anyway.
 
 ## 1. Creating the bot with BotFather
 
@@ -69,6 +86,8 @@ these under `--help`, it does not add a flag prefix):
 | `--bot-token` | `BOT_TOKEN` | none | yes |
 | `--allowed-chats` | `ALLOWED_CHATS` | none | yes |
 | `--max-rows` | `MAX_ROWS` | `10` | no |
+| `--miniapp-base-url` | `MINIAPP_BASE_URL` | none | yes |
+| `--max-add-value-usd` | `MAX_ADD_VALUE_USD` | `5000` | no |
 
 `--allowed-chats` / `ALLOWED_CHATS` takes a comma-separated list, e.g.
 `123456789,-987654321`. An empty value is accepted by `clap` but authorizes no one -- the bot
@@ -77,6 +96,22 @@ error, so an accidentally-empty value is easy to miss.
 
 `--max-rows` / `MAX_ROWS` caps how many rows `/top`, `/volume` and `/potential` render before the
 reply would need to paginate (default 10; see `bin/bot/src/config.rs`'s `defaults::MAX_ROWS`).
+
+`--miniapp-base-url` / `MINIAPP_BASE_URL` is the base URL for the Mini App's direct link, e.g.
+`https://t.me/FeeFarmBot/app` (set it up via `@BotFather` -> your bot -> Bot Settings -> Menu
+Button, or `/newapp`). Every fund-moving command appends `?startapp=<action>_<...>` to this URL
+and puts it on the button under its proposal -- it is the only place any of those commands ever
+points a user, since the chat itself can never sign anything. There is no fallback: without this
+set, the bot refuses to start rather than proposing something with nowhere to send the user to
+sign it.
+
+`--max-add-value-usd` / `MAX_ADD_VALUE_USD` (default `5000`) is an advisory per-`/add` cap in USD
+(`bin/bot/src/config.rs`'s `defaults::max_add_value_usd`). It is only enforced when the target
+position already carries a priced valuation to estimate against; an `/add` above the cap is
+refused outright, not silently clamped. This is advisory, the same way every backend-side cap is
+advisory in a keyless design (see [`docs/security.md`](security.md) and `miniapp/README.md`'s
+"Per-user notional caps" section) -- it stops an accidental fat-fingered amount from this chat,
+it does not stop a modified client from building the same transaction some other way.
 
 `bot` also takes the settings every binary in this workspace takes: `common::PostgresConfig`
 (`--database-url`/`DATABASE_URL`, required; `--max-connections`/`MAX_CONNECTIONS`, default `10`),
@@ -108,12 +143,13 @@ unset and the process refuses to start.
 
 ### Minimal working configuration
 
-Either export the two required variables directly:
+Either export the required variables directly:
 
 ```sh
 export DATABASE_URL=postgres://feefarm:feefarm@localhost:5432/feefarm
 export BOT_TOKEN=123456789:AAExampleExampleExampleExampleExampl
 export ALLOWED_CHATS=123456789,-987654321
+export MINIAPP_BASE_URL=https://t.me/FeeFarmBot/app
 cargo run --bin bot
 ```
 
@@ -124,6 +160,7 @@ the real values, and point `--config` at it:
 database_url: postgres://feefarm:feefarm@localhost:5432/feefarm
 bot_token: "123456789:AAExampleExampleExampleExampleExampl"
 allowed_chats: "123456789,-987654321"
+miniapp_base_url: "https://t.me/FeeFarmBot/app"
 ```
 
 ```sh
@@ -154,6 +191,15 @@ why - Full rationale for a pool, including why it did not qualify
 watch - Force or release tier-1 membership for a pool
 mute - Suppress signals for a pool for a duration
 status - Ingest health and tier size
+wallet - Register your public key, or list your wallets
+balance - Latest token balances for a registered wallet
+positions - Open positions for a registered wallet
+profit - Profit for one of your positions
+open - Propose opening a new position (signed in the Mini App)
+add - Propose adding liquidity (signed in the Mini App)
+remove - Propose removing liquidity (signed in the Mini App)
+claim - Propose claiming fees (signed in the Mini App)
+close - Propose closing a position (signed in the Mini App)
 ```
 
 If you ever change the command set in code, this pasted block goes stale until the bot restarts
@@ -177,6 +223,13 @@ the system up first, in this order:
    indicators, signals, watch set). Until `scorer` has ticked at least once against data `indexer`
    has written, every ranking command correctly reports empty rather than showing anything --
    see the troubleshooting section below.
+4. **The Mini App, deployed and registered with BotFather.** `/open`, `/add`, `/remove`,
+   `/claim`, and `/close` all end with a button pointing at `miniapp_base_url`; that button is
+   only usable if something real is actually deployed and registered at that URL. Building and
+   running the Mini App itself is a separate codebase and toolchain -- see `miniapp/README.md`,
+   in particular its "Local development against Telegram" and "Deployment" sections. Nothing
+   about the bot itself checks this at startup; a proposal renders and a button appears either
+   way, it just opens nothing useful if the Mini App is not actually there yet.
 
 Then start the bot itself:
 
@@ -188,7 +241,56 @@ or with `--release` / a built binary, same as any other binary in this workspace
 separate startup flag for polling vs. webhooks -- `worker.rs` always uses long polling
 (`teloxide::update_listeners::polling_default`).
 
-## 6. Commands
+## 6. Walkthrough: registering a wallet and farming a position
+
+This is the same sequence of commands end to end, using placeholder addresses throughout --
+`POOL_ADDR`, `WALLET_PUBKEY`, and `POSITION_ADDR` stand in for real base58 Solana addresses. At
+every step where a button appears, tapping it opens the Mini App, where the actual review and
+signature happen; nothing here moves anything by itself.
+
+1. **Register a wallet.** Generate or import a wallet in the Mini App (open it from the bot's
+   menu button, or from any command's button, the first time), then register its public key here:
+   ```
+   /wallet WALLET_PUBKEY main
+   ```
+   The bot never sees, asks for, or accepts anything but the public key -- see
+   ["Never paste a key"](#never-paste-a-key) below.
+2. **Find a pool worth farming.**
+   ```
+   /potential 1h
+   ```
+   Gate-filtered to quality-A pools clearing breakeven `r_org`. Pick one from the list, or check
+   a specific candidate with `/pool POOL_ADDR` or `/why POOL_ADDR` first.
+3. **Open a position.**
+   ```
+   /open POOL_ADDR 20
+   ```
+   Proposes a 20-bin-wide range centered on the pool's most recently observed active bin (see
+   the `/open` reference below for why it takes a width instead of a bin range). Tap the
+   button, review the range and the strategy in the Mini App, sign. The new position is created
+   empty.
+4. **Deposit into it.**
+   ```
+   /add POSITION_ADDR 10 250
+   ```
+   Proposes depositing `10` of token X and `250` of token Y (whatever the pool's pair actually
+   is -- `/pool` or the proposal itself names them). Refused if the pool no longer clears the
+   gate, or if the estimated USD value is over the configured cap.
+5. **Watch it.** `/positions` lists every open position for a wallet; `/profit POSITION_ADDR`
+   shows deposited-vs-withdrawn-plus-current-value at any time, no gate or ownership friction
+   beyond the position being yours.
+6. **Claim fees as they accrue.**
+   ```
+   /claim POSITION_ADDR
+   ```
+7. **Close it out.**
+   ```
+   /close POSITION_ADDR
+   ```
+   Proposes withdrawing everything and closing the position. `/remove POSITION_ADDR <percent>`
+   is the partial version of the same thing, for taking some liquidity out without closing.
+
+## 7. Commands
 
 Every command is dispatched through `bin/bot/src/cli.rs`'s `parse_command`, which runs the raw
 message text through `clap`. That means `--help` on any subcommand works in chat (e.g.
@@ -356,7 +458,335 @@ geyser: last_slot 301829130  slot_gap 0  decode_errors 0  write_latency 4 ms  at
 If no signal has ever been written: `config: no signals recorded yet.` If no ingest health row
 exists yet: `no ingest health rows recorded yet.`
 
-## 7. Group versus direct use
+### Never paste a key
+
+Before the wallet and position commands: `/wallet` only ever accepts a public key. It never needs,
+and will never ask for, a private key, a seed phrase, a recovery phrase, or a passphrase --
+those exist only inside the Mini App, on your own device (see `miniapp/README.md`'s "Custody
+model"). Do not paste one into this chat, or into any chat, on the assumption that this is how a
+wallet gets "connected" -- it is not, for this bot or for any legitimate one.
+
+If you paste something shaped like key material anyway -- a raw base58 secret key, a Solana CLI
+on-disk key file (`[12,34,...]`), or a 12/15/18/21/24-word recovery phrase -- `bin/bot/src/
+secret_guard.rs` catches it on the raw message text, before `clap` ever tokenizes it, and the bot
+refuses:
+
+```
+refused -- this looked like a private key or seed phrase
+
+/wallet only ever accepts a public key; signing happens on your own device inside the Mini App,
+and this bot and its backend never see, store, or log a private key. I have not stored or logged
+what you just sent, but Telegram has already kept a copy of it in this chat's history -- delete
+that message now, and treat whatever key or phrase it contained as compromised: abandon it, and
+create or import a new wallet in the Mini App instead.
+```
+
+The detection is structural (length, word count, character shape -- `bin/bot/src/shape.rs`), not
+an attempt to decode or validate the value as a real key, and it never echoes the offending text
+back. But the refusal message says the important part plainly: the paste itself already happened,
+Telegram already has it in this chat's history, and that key must be treated as burned -- the
+bot's refusal to store or log it does not undo that.
+
+### `/wallet [pubkey] [label]`
+
+Registers a Solana public key against your Telegram identity, or lists what you already have
+registered.
+
+With no arguments, lists your registered wallets:
+
+```
+Your wallets
+
+7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU -- main, registered 2026-08-15
+9yLMzk4DX88e18TYKTEqcE6kCliuUsB94UAVSiJotBtV -- (no label), registered 2026-08-20
+```
+
+Empty: `no wallet registered yet. Send /wallet <pubkey> with the public key shown in the Mini App.`
+
+With a `pubkey` (and an optional `label`), registers it:
+
+- Not base58, or not 32-44 characters: `that does not look like a Solana public key (expected a
+  base58 string, 32-44 characters). If you meant to paste a private key or seed phrase, stop --
+  /wallet never needs one; register the public key shown in the Mini App instead.`
+- New registration: `7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU registered to your account.`
+- Already yours (re-registering, e.g. to change the label): `7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU is already yours -- label refreshed.`
+- Registered to a different Telegram account: `7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU is
+  already registered to a different Telegram account. Its owner has to revoke it before it can be
+  registered here.` A pubkey belongs to exactly one Telegram account at a time -- the bot cannot
+  verify who actually controls the corresponding key, so it refuses to reassign ownership rather
+  than guessing.
+
+`pubkey` and `label` are both plain positional arguments -- a third word is rejected by `clap`
+before the handler ever runs.
+
+Needs a Telegram user identity on the message (see below); a channel post or some anonymous-admin
+group messages do not carry one: `this command needs your Telegram user identity, which was not
+present on this message (channel posts and some anonymous-admin messages do not carry one) --
+send it as yourself in a normal message.`
+
+### `/balance [wallet]`
+
+Latest token balances for a registered wallet. `wallet` is optional and resolves to yours
+automatically if you have exactly one registered wallet; with zero or more than one, it is
+required.
+
+```
+Balances for 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+
+BXk7hwx4X6vGncdU4V6wSKFwtP7yYVjEyGHwvA7dKtmA  12.5  1834.20
+5q4kNQTgqW3zWNjJzXTvSGr6L1GvBqcaXGr5x4WQz1wc  500  500.00
+```
+
+Each row is `mint  amount  value_usd`. No balances on record yet (they refresh on a fixed poll
+cadence once a wallet is registered): `no balances on record yet -- they refresh on a fixed poll
+cadence once a wallet is registered.`
+
+Refusals:
+
+- No wallet registered at all: `no wallet registered yet. Send /wallet <pubkey> with the public
+  key shown in the Mini App.`
+- `wallet` given but not registered to you: `<wallet> is not registered to you. Register it first
+  with /wallet, or use one of your own registered wallets.`
+- No `wallet` given and you have more than one registered:
+  ```
+  you have more than one registered wallet -- say which one:
+
+  7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+  9yLMzk4DX88e18TYKTEqcE6kCliuUsB94UAVSiJotBtV
+
+  e.g. /balance <pubkey>
+  ```
+
+### `/positions [wallet]`
+
+Open positions for a registered wallet. Same optional `wallet` resolution and the same three
+refusal cases as `/balance` (with the example in the "say which one" case reading `/positions
+<pubkey>` instead).
+
+```
+Open positions
+
+Position
+3aQXvBTQ2Z8HneCzKvV1FskV3hjJyzE9j5qmSybVoWjR
+SOL/USDC
+bin range 991 - 1010
+opened 2026-08-20 14:03
+```
+
+No open positions for that wallet: `no open positions for this wallet.`
+
+### `/profit <position>`
+
+Deposits-vs-withdrawals-plus-current-value for one of your positions, at any time (not just when
+closing it).
+
+```
+Position
+3aQXvBTQ2Z8HneCzKvV1FskV3hjJyzE9j5qmSybVoWjR
+SOL/USDC
+bin range 991 - 1010
+
+deposited 1000  withdrawn/claimed 120  current value 950
+profit (USD, realized + unrealized): 70
+vs. holding: -30 (value now vs. simply holding the deposited tokens)
+
+as of 2026-08-31 09:00:00: price 148.20 / 1.00  value 950  in range yes
+```
+
+`vs. holding` only appears when a hold-value baseline is on record for the position; profit
+itself is always shown, computed as `withdrawn/claimed + current value - deposited`. If no mark
+has ever been taken for the position, the valuation line reads `no live valuation on record yet
+for this position -- current price and value will be shown in the Mini App before you confirm.`
+instead of a price/value row.
+
+Refusals: no such position (`no position found at <address>`), or a position that belongs to a
+wallet not registered to you (`<address> does not belong to a wallet registered to you.`).
+
+### Fund-moving commands
+
+`/open`, `/add`, `/remove`, `/claim`, and `/close` share the same shape: check ownership, apply
+the risk gate where relevant, render exactly what would happen, and end with a button that opens
+the Mini App to review and sign. Every proposal below ends with the same notice
+(`bin/bot/src/render/mod.rs`'s `miniapp_notice`):
+
+```
+this chat cannot sign anything. Tap the button below to review and sign this in the Mini App --
+nothing moves until you approve it there, and you will be sent back here once it confirms.
+```
+
+The bot never learns whether the button was tapped, let alone what happened after -- the Mini App
+and its own backend own everything from that point on. Every command in this group needs your
+Telegram user identity the same way `/wallet` does, and refuses with the same message if it is
+missing (see above).
+
+### `/open <address> <width>`
+
+Proposes opening a new position in pool `address`, sized by `width` (an integer bin count, `1`
+to `70`) rather than an explicit bin range. This is deliberate: a width plus the pool address is
+everything a row from `/potential` already gives you -- there is no bin id to read off a chart or
+copy by hand, and the range is centered on the pool's own most recently observed active bin
+instead of one you would otherwise have to guess.
+
+The centering arithmetic (`bin/bot/src/handlers.rs`): `lower = active_bin - (width - 1) / 2`,
+`upper = lower + width - 1`, both using integer division. For an odd width the range is exactly
+symmetric around the active bin. For an even width it is not quite symmetric -- one more bin
+lands above the active bin than below it (e.g. `width 20` centered on active bin `1000` gives the
+range `991 - 1010`: 9 bins below, the active bin itself, 10 bins above). This only matters at the
+margin; it is not a reason to prefer odd widths.
+
+```
+Open position
+SOL/USDC
+7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+bin range 991 - 1010 (width 20)
+price range 0.048852 - 0.051842 (token_y per token_x, raw pool units -- not decimal-adjusted or priced in USD)
+strategy SpotBalanced
+
+a new position account will be created for this range -- signing this opens it empty; deposit
+into it afterward with /add.
+
+this chat cannot sign anything. Tap the button below to review and sign this in the Mini App --
+nothing moves until you approve it there, and you will be sent back here once it confirms.
+```
+
+The button is labeled **Open position**.
+
+Refusals, checked in this order:
+
+- No Telegram user identity: see above.
+- No wallet registered: `no wallet registered yet. Send /wallet <pubkey> with the public key
+  shown in the Mini App.` (`/open` has no existing position to infer a wallet from, unlike
+  `/add`/`/remove`/`/claim`/`/close`, so it checks registration directly instead.)
+- Pool not found: `no pool found at <address>.`
+- Pool does not currently clear the risk gate -- the same gate `/potential` applies, since
+  opening a brand new position is at least as consequential as adding to one that already
+  cleared it:
+  ```
+  refused -- this pool does not currently clear the risk gate
+  7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+
+  latest evaluation: GATE_FAIL, timeframe 1h
+
+  FAIL vol_tvl: observed 0.90 >= threshold 1.00 note: below floor for V1
+  ```
+  or, if no evaluation exists on record for the pool yet: `no evaluation on record for this pool
+  yet, so it cannot be verified against the gate -- try again once scoring has run for it.`
+- No active-bin snapshot on record yet -- there is nothing honest to center a range on:
+  `no active-bin reading on record yet for <address> -- opening a position needs to know where to
+  center the range, and none has arrived from ingestion yet. Try again shortly, or check the pool
+  with /pool first.` This is expected for a pool `indexer` has only just started watching; it is
+  not an error to retry against.
+- The computed range falls outside what the pool's bin step can price (only possible near the
+  edge of what that bin step can represent at all): `refused -- bin range is not valid for this
+  pool` followed by the pool address and `the range [<lower>, <upper>] falls outside what this
+  pool's bin step can price -- try a narrower width.`
+
+### `/add <position> <amount_x> <amount_y>`
+
+Proposes depositing `amount_x` of the pool's token X and `amount_y` of its token Y into an
+existing open position (both decimal amounts, in the token's own units, not lamports/raw).
+
+```
+Position
+3aQXvBTQ2Z8HneCzKvV1FskV3hjJyzE9j5qmSybVoWjR
+SOL/USDC
+bin range 991 - 1010
+
+proposed: add 10 / 250
+strategy SpotBalanced
+
+as of 2026-08-31 09:00:00: price 148.20 / 1.00  value 950  in range yes
+
+this chat cannot sign anything. Tap the button below to review and sign this in the Mini App --
+nothing moves until you approve it there, and you will be sent back here once it confirms.
+```
+
+The button is labeled **Add liquidity**.
+
+Refusals:
+
+- Position not found, not yours, or already closed (shared with `/remove`/`/claim`/`/close`):
+  `no position found at <address>`; `<address> does not belong to a wallet registered to you.`;
+  `<address> is already closed -- there is nothing left to act on.`
+- Either amount is zero or negative: `both amounts must be greater than zero.`
+- The pool no longer clears the risk gate (same check and same message shape as `/open`'s gate
+  refusal above).
+- Estimated value over the configured cap (only checked when the position already has a priced
+  valuation to estimate against -- see `--max-add-value-usd` in section 3): `refused -- over the
+  per-transaction cap` followed by the position address and `estimated value <est> exceeds the
+  configured cap <cap> -- split this into smaller adds, or ask an operator to raise the configured
+  cap.` Without a priced valuation on record, the cap cannot be checked and the proposal proceeds,
+  saying so plainly in the valuation line rather than silently skipping the check.
+
+### `/remove <position> <percent>`
+
+Proposes withdrawing `percent` (an integer, `1` to `100`) of a position's liquidity, without
+closing it.
+
+```
+Position
+3aQXvBTQ2Z8HneCzKvV1FskV3hjJyzE9j5qmSybVoWjR
+SOL/USDC
+bin range 991 - 1010
+
+proposed: withdraw 50% of this position
+
+as of 2026-08-31 09:00:00: price 148.20 / 1.00  value 950  in range yes
+
+this chat cannot sign anything. Tap the button below to review and sign this in the Mini App --
+nothing moves until you approve it there, and you will be sent back here once it confirms.
+```
+
+The button is labeled **Remove liquidity**. Not gated the same way `/open`/`/add` are -- removing
+liquidity reduces exposure rather than growing it. Refusals: the same position not-found /
+not-owned / already-closed cases as `/add`.
+
+### `/claim <position>`
+
+Proposes claiming accrued fees on a position.
+
+```
+Position
+3aQXvBTQ2Z8HneCzKvV1FskV3hjJyzE9j5qmSybVoWjR
+SOL/USDC
+bin range 991 - 1010
+
+proposed: claim accrued fees
+
+uncollected fees: 0.42 / 3.10
+
+as of 2026-08-31 09:00:00: price 148.20 / 1.00  value 950  in range yes
+
+this chat cannot sign anything. Tap the button below to review and sign this in the Mini App --
+nothing moves until you approve it there, and you will be sent back here once it confirms.
+```
+
+The uncollected-fees line only appears when a valuation is on record. The button is labeled
+**Claim fees**. Not gated. Refusals: the same position not-found / not-owned / already-closed
+cases as `/add`.
+
+### `/close <position>`
+
+Proposes withdrawing everything and closing a position entirely.
+
+```
+Position
+3aQXvBTQ2Z8HneCzKvV1FskV3hjJyzE9j5qmSybVoWjR
+SOL/USDC
+bin range 991 - 1010
+
+proposed: withdraw everything and close this position
+
+as of 2026-08-31 09:00:00: price 148.20 / 1.00  value 950  in range yes
+
+this chat cannot sign anything. Tap the button below to review and sign this in the Mini App --
+nothing moves until you approve it there, and you will be sent back here once it confirms.
+```
+
+The button is labeled **Close position**. Not gated. Refusals: the same position not-found /
+not-owned / already-closed cases as `/add`.
+
+## 8. Group versus direct use
 
 The bot behaves the same way in a group as in a DM, with two differences:
 
@@ -379,7 +809,7 @@ command here to work.
 The allow-list applies identically in both cases -- a group chat id has to be in `ALLOWED_CHATS`
 (negative, see section 2) exactly the same way a DM chat id does.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 **Invalid or revoked token.** `register_commands` (`bin/bot/src/worker.rs`) calls Telegram's
 `setMyCommands` before the polling loop ever starts, so a bad token fails at startup, not on the
@@ -395,7 +825,7 @@ confirm you have the sign wrong on a group id (see section 2) -- compare the log
 what is actually in `ALLOWED_CHATS`.
 
 **Every command returns empty, but the bot answers.** This is the expected state before `scorer`
-has produced anything, not a bug -- see each command's empty-state text in section 6
+has produced anything, not a bug -- see each command's empty-state text in section 7
 (`no ranked pools for this timeframe yet.`, `nothing clears the gate right now. ...`, `no
 evaluation on record for this pool. ...`, and so on). Confirm with `/status`: `watched pools: 0`
 and `no ingest health rows recorded yet.` both mean nothing has flowed through the pipeline yet.
@@ -403,6 +833,49 @@ Separately, if migrations were never applied (`make migrate`, or `indexer`/`scor
 every command instead fails with `that command failed unexpectedly; nothing was applied. Check the
 logs.` -- check the bot's own log output for the underlying Postgres error rather than assuming
 the tables are just empty.
+
+**No wallet registered.** `/balance`, `/positions`, and `/open` (and, indirectly, `/add`,
+`/remove`, `/claim`, `/close` -- they resolve a wallet through the position they act on) all
+refuse with `no wallet registered yet. Send /wallet <pubkey> with the public key shown in the
+Mini App.` Register the public key the Mini App shows for the wallet you created or imported
+there -- never a private key or phrase, see ["Never paste a key"](#never-paste-a-key).
+
+**Wallet or position not yours.** `<address> is not registered to you. ...` (for a `wallet`
+argument someone else registered) or `<address> does not belong to a wallet registered to you.`
+(for a `position` argument) means exactly what it says -- ownership is keyed on the Telegram
+user id that sent the message, checked against `wallets.telegram_user_id`, not on anything the
+caller can assert. If you expected to own it, confirm you registered the same wallet from the
+same Telegram account with `/wallet` (no arguments) first.
+
+**Pool fails the risk gate.** `/open` and `/add` both refuse with `refused -- this pool does not
+currently clear the risk gate` when the pool's latest signal is not `POTENTIAL` -- the same gate
+`/potential` filters on. Run `/why <address>` on the same pool to see which condition failed and
+by how much; this is not a bug, it is the same protection `/potential` gives a browsing user
+applied to a command that would actually grow exposure.
+
+**No active-bin snapshot for `/open`.** `no active-bin reading on record yet for <address> --
+opening a position needs to know where to center the range, and none has arrived from ingestion
+yet.` `indexer` has to have observed at least one active-bin reading for that specific pool
+before `/open` has anything honest to center a range on -- this is common for a pool that was
+only just promoted to watched, or one `indexer` has not subscribed to yet. Retry after a short
+wait, or check `/pool <address>` to confirm the pool is known at all first.
+
+**Amount above the configured cap.** `/add` refuses with `refused -- over the per-transaction
+cap` when the proposed deposit's estimated USD value exceeds `--max-add-value-usd` (default
+`5000`, see section 3) and the position already has a priced valuation to check against. This is
+an advisory limit enforced by this chat only, not a property of the transaction itself -- split
+the deposit into smaller `/add` calls, or have an operator raise `MAX_ADD_VALUE_USD`. If the
+position has no priced valuation yet, the cap cannot be checked at all and the proposal goes
+through regardless -- the valuation line says so plainly rather than silently skipping the check.
+
+**Tapped nothing, or tapped the button and nothing happened.** The bot never learns whether a
+Mini App button was tapped, let alone what happened afterward (see section 7's "Fund-moving
+commands") -- there is no follow-up message, no timeout, and no "did you mean to finish this"
+nudge, by design. If a proposal's button was never tapped, nothing was proposed to Solana and
+nothing needs cleaning up; just send the command again if you still want to go through with it.
+If the button was tapped but the Mini App did not open, confirm `miniapp_base_url` actually
+points at a deployed Mini App registered with BotFather (section 5, step 4) -- a proposal renders
+correctly even if the URL it links to serves nothing.
 
 **Rate limiting.** Telegram allows roughly one message per second per chat. `bin/bot/src/worker.rs`
 enforces a 1050ms minimum gap between sends to the same chat (`PER_CHAT_MIN_GAP`,

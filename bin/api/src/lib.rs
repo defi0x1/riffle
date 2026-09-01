@@ -17,6 +17,7 @@ mod telegram_auth;
 #[cfg(all(test, feature = "db-tests"))]
 mod test_support;
 mod tx_build;
+mod tx_events;
 mod wallet_resolve;
 
 pub use config::Args;

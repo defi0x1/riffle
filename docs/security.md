@@ -78,6 +78,26 @@ Three boundaries matter, and they are not symmetric:
   transaction without invalidating it. Use an RPC provider worth trusting for anything
   balance- or build-relevant; this is an operational choice, not something code can enforce.
 
+**What this means for a user, concretely, not just for whoever built this:**
+
+- **Never paste a private key, seed phrase, or recovery phrase into this chat, or into any
+  chat, ever.** No legitimate flow here asks for one -- the Telegram bot's `/wallet` command
+  only ever accepts a public key, and refuses anything shaped like key material without echoing
+  it back or logging it (see [`docs/telegram.md`](telegram.md)'s "Never paste a key"). A key or
+  phrase typed into a chat is compromised the moment it is sent, refused or not, because Telegram
+  itself has already kept a copy in that chat's history.
+- **Never share your Mini App passphrase with anyone**, including someone claiming to be able to
+  help recover a wallet. There is no backend-mediated recovery of any kind -- no password reset,
+  no support-initiated restore, because the backend never had a copy of the key to restore from
+  (see `miniapp/README.md`'s "Storage and recovery"). A request for the passphrase is never a
+  legitimate recovery step; it is the entire attack.
+- **Never approve a transaction in the Mini App whose displayed summary you do not understand.**
+  The summary is the one thing standing between what the backend proposed and what your
+  signature actually authorizes -- the verifier checks the transaction matches the summary, not
+  that the summary describes a good decision (see "The transaction verifier" in
+  `miniapp/README.md`). If a pool, an amount, or an action does not look like what you asked for
+  in the chat, stop and do not sign; treat an unfamiliar or unexplained summary the same way.
+
 ## 3. What the automated checks enforce
 
 | Check | Job | Enforces | Does not catch |
