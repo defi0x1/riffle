@@ -7,7 +7,6 @@ edition.workspace = true
 common = { workspace = true }
 metrics = { workspace = true }
 dlmm_decode = { workspace = true }
-lb_clmm = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-sdk = { workspace = true }

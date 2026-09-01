@@ -5,20 +5,18 @@ use solana_sdk::pubkey::Pubkey;
 pub(crate) fn bin_array_pda(lb_pair: &Pubkey, index: i64) -> Pubkey {
     Pubkey::find_program_address(
         &[
-            lb_clmm::utils::seeds::BIN_ARRAY,
+            dlmm_decode::BIN_ARRAY,
             lb_pair.as_ref(),
             &index.to_le_bytes(),
         ],
-        &lb_clmm::ID,
+        &dlmm_decode::ID,
     )
     .0
 }
 
 /// Which BinArray a bin id falls in.
 pub(crate) fn bin_array_index(active_bin_id: i32) -> i64 {
-    // Only fails on i32 overflow at the extreme edge of the bin id range, which real pools
-    // never reach; falling back to array 0 there is harmless since the next update corrects it.
-    lb_clmm::state::bin::BinArray::bin_id_to_bin_array_index(active_bin_id).unwrap_or(0) as i64
+    dlmm_decode::bin_id_to_bin_array_index(active_bin_id) as i64
 }
 
 /// The three BinArrays that matter for a pool's active bin: the one containing it plus its

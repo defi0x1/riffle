@@ -2,6 +2,7 @@ use eyre::WrapErr;
 use solana_sdk::pubkey::Pubkey;
 use std::sync::LazyLock;
 
+use crate::accounts::wire::BinArrayWire;
 use crate::discriminator::discriminator;
 
 pub static BIN_ARRAY_DISCRIMINATOR: LazyLock<[u8; 8]> =
@@ -9,10 +10,10 @@ pub static BIN_ARRAY_DISCRIMINATOR: LazyLock<[u8; 8]> =
 
 // See the comment on ACCOUNT_LEN in accounts/lb_pair.rs: zero-copy accounts' in-memory size is
 // their on-chain size, so size_of stands in for anchor_lang's Space::INIT_SPACE.
-const ACCOUNT_LEN: usize = 8 + std::mem::size_of::<lb_clmm::state::bin::BinArray>();
+const ACCOUNT_LEN: usize = 8 + std::mem::size_of::<BinArrayWire>();
 
 // 70. bin_id = bin_array.index * BINS_PER_ARRAY + offset_within_array.
-const BINS_PER_ARRAY: i32 = lb_clmm::constants::MAX_BIN_PER_ARRAY_USIZE as i32;
+const BINS_PER_ARRAY: i32 = crate::constants::MAX_BIN_PER_ARRAY as i32;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BinState {
@@ -51,9 +52,8 @@ pub fn decode_bin_array(data: &[u8]) -> eyre::Result<BinArrayState> {
         );
     }
 
-    let raw: lb_clmm::state::bin::BinArray =
-        bytemuck::try_pod_read_unaligned(&data[8..ACCOUNT_LEN])
-            .wrap_err_with(|| "Reading BinArray bytes")?;
+    let raw: BinArrayWire = bytemuck::try_pod_read_unaligned(&data[8..ACCOUNT_LEN])
+        .wrap_err_with(|| "Reading BinArray bytes")?;
 
     let index = i32::try_from(raw.index).wrap_err_with(|| "Casting bin array index to i32")?;
     let lower_bin_id = index
@@ -76,7 +76,7 @@ pub fn decode_bin_array(data: &[u8]) -> eyre::Result<BinArrayState> {
         .collect();
 
     Ok(BinArrayState {
-        lb_pair: raw.lb_pair,
+        lb_pair: Pubkey::from(raw.lb_pair),
         index: raw.index,
         bins,
     })

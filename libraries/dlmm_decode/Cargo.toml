@@ -4,15 +4,14 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-lb_clmm = { workspace = true }
 solana-sdk = { workspace = true }
 borsh = { workspace = true, features = ["derive"] }
 eyre = { workspace = true }
 thiserror = { workspace = true }
-# Not in workspace.dependencies: pulled transitively by lb_clmm already (it depends on
-# bytemuck 1.20 for its own #[zero_copy] accounts), so this adds no new supply chain surface.
-# Used for pod_read_unaligned when casting raw account bytes onto lb_clmm's zero-copy structs.
-bytemuck = { version = "1.20", features = ["min_const_generics", "extern_crate_std"] }
+# Not in workspace.dependencies: only this crate casts raw account bytes onto the zero-copy
+# wire structs in accounts/wire.rs (derive for the struct-level Pod/Zeroable impls,
+# min_const_generics for the 70-element bin arrays).
+bytemuck = { version = "1.20", features = ["derive", "min_const_generics", "extern_crate_std"] }
 
 [dev-dependencies]
 solana-sdk = { workspace = true }

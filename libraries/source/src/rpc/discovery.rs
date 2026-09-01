@@ -31,7 +31,7 @@ pub async fn discover_pools(client: &RpcClient) -> eyre::Result<Vec<PoolMeta>> {
     };
 
     let accounts = client
-        .get_program_accounts_with_config(&lb_clmm::ID, config)
+        .get_program_accounts_with_config(&dlmm_decode::ID, config)
         .await
         .wrap_err_with(|| "Discovering pools via getProgramAccounts")?;
 

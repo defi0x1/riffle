@@ -131,8 +131,8 @@ fn map_liquidity(wire: LiquidityWire, kind: LiquidityEventKind) -> DecodedLiquid
 fn map_swap(wire: SwapWire) -> eyre::Result<DecodedSwap> {
     let fee_bps = wire
         .fee_bps
-        .checked_mul(lb_clmm::constants::BASIS_POINT_MAX as u128)
-        .and_then(|v| v.checked_div(lb_clmm::constants::FEE_PRECISION as u128))
+        .checked_mul(crate::constants::BASIS_POINT_MAX as u128)
+        .and_then(|v| v.checked_div(crate::constants::FEE_PRECISION as u128))
         .ok_or_else(|| eyre::eyre!("fee_bps conversion overflowed"))?;
     let fee_bps: u64 = fee_bps
         .try_into()

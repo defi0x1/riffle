@@ -19,17 +19,11 @@ engine = { path = "libraries/engine" }
 
 # Solana
 #
-# lb_clmm is Meteora's on-chain DLMM program crate, and this is intentionally a local path
-# dependency rather than a pinned git dependency on a public repository. MeteoraAg/dlmm-sdk
-# removed the on-chain program source from its history in March 2025 -- the last commit that
-# had it is v0.8.2, built against anchor-lang 0.28 and solana-program ~1.16, and the repository
-# has published only the client SDK since. That snapshot's dependency tree does not resolve
-# alongside this workspace's solana-sdk 2.x stack (a hard curve25519-dalek version conflict at
-# `cargo metadata` time, verified directly) and predates symbols this workspace's decode layer
-# depends on, so it cannot stand in for the version actually built and tested against. A clone
-# of this repository needs a local checkout of the matching source at ../DLMM until that gap is
-# closed some other way.
-lb_clmm = { path = "../DLMM/programs/lb_clmm", default-features = false, features = ["no-entrypoint"] }
+# dlmm_decode carries our own account/event/constant definitions derived from the public IDL
+# (MeteoraAg/dlmm-sdk, https://raw.githubusercontent.com/MeteoraAg/dlmm-sdk/main/idls/dlmm.json)
+# rather than depending on the program's source crate -- MeteoraAg/dlmm-sdk removed the
+# on-chain program source from its history in March 2025 and has published only the client SDK
+# since, so there is no public crate to depend on.
 solana-rpc-client = "2.1"
 solana-rpc-client-api = "2.1"
 solana-sdk = "2.1"

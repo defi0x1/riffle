@@ -24,8 +24,8 @@ pub fn unix_to_datetime(unix_secs: i64) -> DateTime<Utc> {
 }
 
 /// Base and dynamic (variable) fee rate, in basis points, for the pool's current on-chain
-/// parameters. Delegates to `lb_clmm`'s own fee pipeline via `dlmm_math`, so this is
-/// bit-exact with what the program itself would compute.
+/// parameters. Goes through `dlmm_math`, whose fee pipeline is pinned by fixtures to the
+/// values the program itself computes.
 pub fn fee_bps(state: &PoolState) -> eyre::Result<(Decimal, Decimal)> {
     let base = dlmm_math::base_fee_rate(
         state.bin_step,

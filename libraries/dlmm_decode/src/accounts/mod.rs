@@ -1,3 +1,5 @@
+mod wire;
+
 mod lb_pair;
 pub use lb_pair::*;
 

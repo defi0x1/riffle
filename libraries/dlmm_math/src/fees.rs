@@ -1,74 +1,72 @@
-use lb_clmm::state::LbPair;
-use lb_clmm::state::parameters::{StaticParameters, VariableParameters};
-
 use crate::error::MathError;
 
-const FEE_PRECISION: f64 = lb_clmm::constants::FEE_PRECISION as f64;
+// Fixed-point denominator for base/variable fee rates. The IDL calls this FEE_DENOMINATOR:
+// https://raw.githubusercontent.com/MeteoraAg/dlmm-sdk/main/idls/dlmm.json
+const FEE_PRECISION: f64 = 1_000_000_000.0;
 
-fn pair_with_params(
-    bin_step_bps: u16,
+// Cap on total_fee_rate = base + variable, same FEE_PRECISION units. IDL constant MAX_FEE_RATE.
+const MAX_FEE_RATE: u128 = 100_000_000;
+
+fn checked_base_fee(
     base_factor: u16,
+    bin_step_bps: u16,
     base_fee_power_factor: u8,
-    variable_fee_control: u32,
-    volatility_accumulator: u32,
-) -> LbPair {
-    LbPair {
-        bin_step: bin_step_bps,
-        parameters: StaticParameters {
-            base_factor,
-            base_fee_power_factor,
-            variable_fee_control,
-            ..Default::default()
-        },
-        v_parameters: VariableParameters {
-            volatility_accumulator,
-            ..Default::default()
-        },
-        ..Default::default()
-    }
+) -> Option<u128> {
+    (base_factor as u128)
+        .checked_mul(bin_step_bps as u128)?
+        .checked_mul(10)?
+        .checked_mul(10u128.checked_pow(base_fee_power_factor as u32)?)
 }
 
-/// Base fee rate as a fraction: the base fee, `f_b = base_factor · s_bps · 10 · 10^pf / 1e9`.
-///
-/// Delegates to `lb_clmm`'s own `LbPair::calculate_base_fee`.
+fn checked_variable_fee(
+    bin_step_bps: u16,
+    variable_fee_control: u32,
+    volatility_accumulator: u32,
+) -> Option<u128> {
+    if variable_fee_control == 0 {
+        return Some(0);
+    }
+
+    let square_vfa_bin = (volatility_accumulator as u128)
+        .checked_mul(bin_step_bps as u128)?
+        .checked_pow(2)?;
+    let v_fee = (variable_fee_control as u128).checked_mul(square_vfa_bin)?;
+
+    // 1e20-ish raw units (variable_fee_control, volatility_accumulator and bin_step are all
+    // basis-point scale) scaled down to FEE_PRECISION (1e9) units, rounded up.
+    v_fee
+        .checked_add(99_999_999_999)?
+        .checked_div(100_000_000_000)
+}
+
+/// Base fee rate as a fraction: `f_b = base_factor · s_bps · 10 · 10^pf / 1e9`.
 pub fn base_fee_rate(
     bin_step_bps: u16,
     base_factor: u16,
     base_fee_power_factor: u8,
 ) -> Result<f64, MathError> {
-    let raw = LbPair::calculate_base_fee(base_factor, bin_step_bps, base_fee_power_factor)
-        .map_err(|_| MathError::Overflow)?;
+    let raw = checked_base_fee(base_factor, bin_step_bps, base_fee_power_factor)
+        .ok_or(MathError::Overflow)?;
     Ok(raw as f64 / FEE_PRECISION)
 }
 
-/// Variable fee rate as a fraction for a given (integer) volatility accumulator: the variable fee.
-/// `volatility_accumulator` is `lb_clmm`'s own unit (10,000 per bin crossed, the volatility accumulator).
-///
-/// Delegates to `lb_clmm`'s own fee pipeline by constructing the minimal `LbPair` state
-/// the computation reads (`bin_step`, `variable_fee_control`, `volatility_accumulator`)
-/// and calling its public `get_variable_fee`, so the integer rounding is bit-exact with
-/// the program's.
+/// Variable fee rate as a fraction for a given (integer) volatility accumulator.
+/// `volatility_accumulator` is in the program's own unit (10,000 per bin crossed).
 pub fn variable_fee_rate(
     bin_step_bps: u16,
     variable_fee_control: u32,
     volatility_accumulator: u32,
 ) -> Result<f64, MathError> {
-    let pair = pair_with_params(
-        bin_step_bps,
-        0,
-        0,
-        variable_fee_control,
-        volatility_accumulator,
-    );
-    let raw = pair.get_variable_fee().map_err(|_| MathError::Overflow)?;
+    let raw = checked_variable_fee(bin_step_bps, variable_fee_control, volatility_accumulator)
+        .ok_or(MathError::Overflow)?;
     Ok(raw as f64 / FEE_PRECISION)
 }
 
-/// the forecast fee: endogenous forecast fee `f̂` — the fee rate implied by a *forecast* volatility,
-/// not the live on-chain accumulator. Our own forecast layered on `lb_clmm`'s exact
-/// integer fee pipeline: we convert the forecast into an equivalent volatility
-/// accumulator (`va = 10,000·k`) and let the program's own arithmetic do the rest, so
-/// only the forecasting step (`E[k²]`) is ours.
+/// The forecast fee: endogenous forecast fee `f̂` — the fee rate implied by a *forecast*
+/// volatility, not the live on-chain accumulator. Our own forecast layered on the program's
+/// exact integer fee pipeline: we convert the forecast into an equivalent volatility
+/// accumulator (`va = 10,000·k`) and let the same arithmetic as `variable_fee_rate` do the
+/// rest, so only the forecasting step (`E[k²]`) is ours.
 ///
 /// # Formula
 ///
@@ -87,15 +85,14 @@ pub fn endogenous_fee_rate(
     let k_forecast = e_k_sq.sqrt();
     let va_forecast = (10_000.0 * k_forecast).round() as u32;
 
-    let pair = pair_with_params(
-        bin_step_bps,
-        base_factor,
-        base_fee_power_factor,
-        variable_fee_control,
-        va_forecast,
-    );
-    let raw = pair.get_total_fee().map_err(|_| MathError::Overflow)?;
-    Ok(raw as f64 / FEE_PRECISION)
+    let base = checked_base_fee(base_factor, bin_step_bps, base_fee_power_factor)
+        .ok_or(MathError::Overflow)?;
+    let variable = checked_variable_fee(bin_step_bps, variable_fee_control, va_forecast)
+        .ok_or(MathError::Overflow)?;
+    let total = base.checked_add(variable).ok_or(MathError::Overflow)?;
+    let capped = total.min(MAX_FEE_RATE);
+
+    Ok(capped as f64 / FEE_PRECISION)
 }
 
 #[cfg(test)]
@@ -106,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_base_fee_rate_matches_bin_step_when_base_factor_is_10000() {
-        // 00 / the base fee note: base_factor 10,000 -> base fee in bps == bin step in bps.
+        // base_factor 10,000 -> base fee in bps == bin step in bps.
         let f_b = base_fee_rate(1, 10_000, 0).unwrap();
         assert!((f_b - 0.0001).abs() < 1e-12);
 
@@ -116,9 +113,9 @@ mod tests {
 
     #[test]
     fn test_endogenous_fee_rate_matches_worked_example_b_variable_component() {
-        // Worked example B (worked example B): vfc = 40,000, s = 100 bps,
-        // sigma_D = 150 bps, kappa_c = 3 -> f_v = 27 bp exactly:
-        // E[k^2] = (150/100)^2 * 3 = 6.75; f_v = 40000 * 6.75 * 100^2 / 1e12 = 0.0027.
+        // Worked example B: vfc = 40,000, s = 100 bps, sigma_D = 150 bps, kappa_c = 3 ->
+        // f_v = 27 bp exactly: E[k^2] = (150/100)^2 * 3 = 6.75;
+        // f_v = 40000 * 6.75 * 100^2 / 1e12 = 0.0027.
         let f_hat = endogenous_fee_rate(100, 0, 0, 40_000, 150.0, 3.0).unwrap();
         assert!((f_hat - 0.0027).abs() < 1e-6, "got {f_hat}");
     }
@@ -129,29 +126,57 @@ mod tests {
         assert!((f_hat - 0.10).abs() < 1e-9);
     }
 
+    // Pinned against lb_clmm's LbPair::calculate_base_fee / get_variable_fee (the vendored
+    // program source, since removed as a dependency) across a wide sweep of bin steps, base
+    // factors and volatility accumulators. Captured from a direct comparison run before that
+    // dependency was dropped.
+    include!("fee_fixtures.rs");
+
+    #[test]
+    fn test_checked_base_fee_matches_pinned_reference_values() {
+        for &(base_factor, bin_step, power_factor, expected) in PINNED_BASE_FEES {
+            assert_eq!(
+                checked_base_fee(base_factor, bin_step, power_factor),
+                expected,
+                "base_factor={base_factor} bin_step={bin_step} power_factor={power_factor}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_checked_variable_fee_matches_pinned_reference_values() {
+        for &(bin_step, vfc, va, expected) in PINNED_VARIABLE_FEES {
+            assert_eq!(
+                checked_variable_fee(bin_step, vfc, va),
+                expected,
+                "bin_step={bin_step} vfc={vfc} va={va}"
+            );
+        }
+    }
+
     proptest! {
-        // Our delegated `variable_fee_rate` must agree with `lb_clmm`'s own
-        // `LbPair::get_variable_fee` bit-for-bit across the on-chain domain.
+        // variable_fee_rate must stay self-consistent with checked_variable_fee, which is
+        // the function pinned against lb_clmm above -- this exercises the f64 conversion on
+        // top of it across the on-chain domain.
         #[test]
-        fn prop_variable_fee_rate_matches_lb_clmm(
+        fn prop_variable_fee_rate_matches_checked_variable_fee(
             bin_step in 1u16..=2_000,
             vfc in 0u32..=1_000_000,
             va in 0u32..=500_000,
         ) {
             let ours = variable_fee_rate(bin_step, vfc, va).unwrap();
-            let pair = pair_with_params(bin_step, 0, 0, vfc, va);
-            let theirs = pair.get_variable_fee().unwrap() as f64 / FEE_PRECISION;
-            prop_assert!((ours - theirs).abs() < 1e-15);
+            let raw = checked_variable_fee(bin_step, vfc, va).unwrap();
+            prop_assert!((ours - raw as f64 / FEE_PRECISION).abs() < 1e-15);
         }
 
         #[test]
-        fn prop_base_fee_rate_matches_lb_clmm(
+        fn prop_base_fee_rate_matches_checked_base_fee(
             bin_step in 1u16..=2_000,
             base_factor in 0u16..=u16::MAX,
         ) {
             let ours = base_fee_rate(bin_step, base_factor, 0).unwrap();
-            let theirs = LbPair::calculate_base_fee(base_factor, bin_step, 0).unwrap() as f64 / FEE_PRECISION;
-            prop_assert!((ours - theirs).abs() < 1e-15);
+            let raw = checked_base_fee(base_factor, bin_step, 0).unwrap();
+            prop_assert!((ours - raw as f64 / FEE_PRECISION).abs() < 1e-15);
         }
     }
 }

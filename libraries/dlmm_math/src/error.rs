@@ -1,5 +1,5 @@
 #[derive(Debug, thiserror::Error)]
 pub enum MathError {
-    #[error("lb_clmm price/fee computation overflowed")]
+    #[error("DLMM price/fee computation overflowed")]
     Overflow,
 }

@@ -47,7 +47,7 @@ fn discriminator_filter(discriminator: &[u8]) -> SubscribeRequestFilterAccountsF
 fn lb_pair_account_filter(pools: &[Pubkey]) -> SubscribeRequestFilterAccounts {
     SubscribeRequestFilterAccounts {
         account: pools.iter().map(Pubkey::to_string).collect(),
-        owner: vec![lb_clmm::ID.to_string()],
+        owner: vec![dlmm_decode::ID.to_string()],
         filters: vec![discriminator_filter(
             dlmm_decode::LB_PAIR_DISCRIMINATOR.as_slice(),
         )],
@@ -78,7 +78,7 @@ fn bin_array_account_filter(
 
     Some(SubscribeRequestFilterAccounts {
         account: accounts,
-        owner: vec![lb_clmm::ID.to_string()],
+        owner: vec![dlmm_decode::ID.to_string()],
         filters: vec![discriminator_filter(
             dlmm_decode::BIN_ARRAY_DISCRIMINATOR.as_slice(),
         )],
@@ -91,7 +91,7 @@ fn broad_transactions_filter() -> SubscribeRequestFilterTransactions {
         vote: Some(false),
         failed: Some(false),
         signature: None,
-        account_include: vec![lb_clmm::ID.to_string()],
+        account_include: vec![dlmm_decode::ID.to_string()],
         account_exclude: Vec::new(),
         account_required: Vec::new(),
     }
@@ -209,7 +209,7 @@ mod tests {
             lb_pair.account,
             vec![pool(1).to_string(), pool(2).to_string()]
         );
-        assert_eq!(lb_pair.owner, vec![lb_clmm::ID.to_string()]);
+        assert_eq!(lb_pair.owner, vec![dlmm_decode::ID.to_string()]);
     }
 
     #[test]
@@ -221,7 +221,7 @@ mod tests {
             .map(|pda| pda.to_string())
             .collect();
         assert_eq!(bin_array.account, expected);
-        assert_eq!(bin_array.owner, vec![lb_clmm::ID.to_string()]);
+        assert_eq!(bin_array.owner, vec![dlmm_decode::ID.to_string()]);
     }
 
     #[test]
@@ -268,7 +268,7 @@ mod tests {
     fn test_event_request_filters_on_program_id() {
         let req = event_subscribe_request(CommitmentLevel::Confirmed, None);
         let swaps = &req.transactions[SWAPS_FILTER];
-        assert_eq!(swaps.account_include, vec![lb_clmm::ID.to_string()]);
+        assert_eq!(swaps.account_include, vec![dlmm_decode::ID.to_string()]);
         assert_eq!(swaps.vote, Some(false));
         assert_eq!(swaps.failed, Some(false));
     }

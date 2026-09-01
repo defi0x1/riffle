@@ -87,7 +87,7 @@ fn decode_transaction_events(
             let Some(program_id) = keys.get(instruction.program_id_index as usize) else {
                 continue;
             };
-            if *program_id != lb_clmm::ID {
+            if *program_id != dlmm_decode::ID {
                 continue;
             }
 
@@ -195,7 +195,7 @@ mod tests {
     use super::*;
 
     fn program_id_bytes() -> Vec<u8> {
-        lb_clmm::ID.to_bytes().to_vec()
+        dlmm_decode::ID.to_bytes().to_vec()
     }
 
     fn tx_with_inner_instruction(slot: u64, data: Vec<u8>) -> SubscribeUpdateTransaction {

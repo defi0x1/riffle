@@ -2,6 +2,7 @@ use eyre::WrapErr;
 use solana_sdk::pubkey::Pubkey;
 use std::sync::LazyLock;
 
+use crate::accounts::wire::PositionV2Wire;
 use crate::discriminator::discriminator;
 
 pub static POSITION_V2_DISCRIMINATOR: LazyLock<[u8; 8]> =
@@ -9,7 +10,7 @@ pub static POSITION_V2_DISCRIMINATOR: LazyLock<[u8; 8]> =
 
 // See the comment on ACCOUNT_LEN in accounts/lb_pair.rs: zero-copy accounts' in-memory size is
 // their on-chain size, so size_of stands in for anchor_lang's Space::INIT_SPACE.
-const ACCOUNT_LEN: usize = 8 + std::mem::size_of::<lb_clmm::state::position::PositionV2>();
+const ACCOUNT_LEN: usize = 8 + std::mem::size_of::<PositionV2Wire>();
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FeeInfoState {
@@ -53,9 +54,8 @@ pub fn decode_position_v2(data: &[u8]) -> eyre::Result<PositionState> {
         );
     }
 
-    let raw: lb_clmm::state::position::PositionV2 =
-        bytemuck::try_pod_read_unaligned(&data[8..ACCOUNT_LEN])
-            .wrap_err_with(|| "Reading PositionV2 bytes")?;
+    let raw: PositionV2Wire = bytemuck::try_pod_read_unaligned(&data[8..ACCOUNT_LEN])
+        .wrap_err_with(|| "Reading PositionV2 bytes")?;
 
     let liquidity_shares = raw.liquidity_shares.to_vec();
     let fee_infos = raw
@@ -70,9 +70,9 @@ pub fn decode_position_v2(data: &[u8]) -> eyre::Result<PositionState> {
         .collect();
 
     Ok(PositionState {
-        lb_pair: raw.lb_pair,
-        owner: raw.owner,
-        operator: raw.operator,
+        lb_pair: Pubkey::from(raw.lb_pair),
+        owner: Pubkey::from(raw.owner),
+        operator: Pubkey::from(raw.operator),
         lower_bin_id: raw.lower_bin_id,
         upper_bin_id: raw.upper_bin_id,
         last_updated_at: raw.last_updated_at,

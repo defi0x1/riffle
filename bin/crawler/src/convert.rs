@@ -59,7 +59,7 @@ fn account_keys(meta: &UiTransactionStatusMeta, message_keys: &[String]) -> Vec<
     keys
 }
 
-/// Decodes every `lb_clmm` self-CPI event out of one transaction. Returns nothing for a
+/// Decodes every DLMM self-CPI event out of one transaction. Returns nothing for a
 /// failed transaction (its inner instructions never committed, so a "swap" decoded from one
 /// would describe liquidity movement that never happened) or one with no metadata at all.
 pub fn decode_transaction(
@@ -80,7 +80,7 @@ pub fn decode_transaction(
     };
 
     let keys = account_keys(meta, &message.account_keys);
-    let program_id = lb_clmm::ID.to_string();
+    let program_id = dlmm_decode::ID.to_string();
 
     let Some(inner_groups): Option<Vec<_>> = Option::from(meta.inner_instructions.clone()) else {
         return Vec::new();
@@ -389,7 +389,7 @@ mod tests {
         let pool = pk(1);
         let tx = tx_with_inner_instructions(
             10,
-            vec![pool.to_string(), lb_clmm::ID.to_string()],
+            vec![pool.to_string(), dlmm_decode::ID.to_string()],
             vec![compiled_group(0, 1, &[9, 9, 9])],
             Some(solana_sdk::transaction::TransactionError::AccountNotFound),
         );
@@ -447,7 +447,7 @@ mod tests {
         };
         let tx = tx_with_inner_instructions(
             10,
-            vec![pool.to_string(), lb_clmm::ID.to_string()],
+            vec![pool.to_string(), dlmm_decode::ID.to_string()],
             vec![group],
             None,
         );
@@ -474,7 +474,7 @@ mod tests {
         let payload = encode_swap_event(other_pool, pk(2));
         let tx = tx_with_inner_instructions(
             10,
-            vec![pool.to_string(), lb_clmm::ID.to_string()],
+            vec![pool.to_string(), dlmm_decode::ID.to_string()],
             vec![compiled_group(0, 1, &payload)],
             None,
         );

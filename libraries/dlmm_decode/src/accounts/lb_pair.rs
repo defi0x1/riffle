@@ -2,6 +2,7 @@ use eyre::WrapErr;
 use solana_sdk::pubkey::Pubkey;
 use std::sync::LazyLock;
 
+use crate::accounts::wire::LbPairWire;
 use crate::discriminator::discriminator;
 
 pub static LB_PAIR_DISCRIMINATOR: LazyLock<[u8; 8]> =
@@ -10,7 +11,7 @@ pub static LB_PAIR_DISCRIMINATOR: LazyLock<[u8; 8]> =
 // LbPair is a zero-copy (#[repr(C)], bytemuck::Pod) account, so its in-memory size is exactly
 // its on-chain size -- no separate INIT_SPACE constant needed (that comes from anchor_lang's
 // Space trait, which would pull in a dependency we don't otherwise need).
-const ACCOUNT_LEN: usize = 8 + std::mem::size_of::<lb_clmm::state::lb_pair::LbPair>();
+const ACCOUNT_LEN: usize = 8 + std::mem::size_of::<LbPairWire>();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PoolStatus {
@@ -64,9 +65,8 @@ pub fn decode_lb_pair(data: &[u8]) -> eyre::Result<PoolState> {
         );
     }
 
-    let raw: lb_clmm::state::lb_pair::LbPair =
-        bytemuck::try_pod_read_unaligned(&data[8..ACCOUNT_LEN])
-            .wrap_err_with(|| "Reading LbPair bytes")?;
+    let raw: LbPairWire = bytemuck::try_pod_read_unaligned(&data[8..ACCOUNT_LEN])
+        .wrap_err_with(|| "Reading LbPair bytes")?;
 
     let status = match raw.status {
         0 => PoolStatus::Enabled,
@@ -75,11 +75,11 @@ pub fn decode_lb_pair(data: &[u8]) -> eyre::Result<PoolState> {
     };
 
     Ok(PoolState {
-        token_x_mint: raw.token_x_mint,
-        token_y_mint: raw.token_y_mint,
-        reserve_x: raw.reserve_x,
-        reserve_y: raw.reserve_y,
-        oracle: raw.oracle,
+        token_x_mint: Pubkey::from(raw.token_x_mint),
+        token_y_mint: Pubkey::from(raw.token_y_mint),
+        reserve_x: Pubkey::from(raw.reserve_x),
+        reserve_y: Pubkey::from(raw.reserve_y),
+        oracle: Pubkey::from(raw.oracle),
         bin_step: raw.bin_step,
         active_bin_id: raw.active_id,
         status,
