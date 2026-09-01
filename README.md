@@ -1,8 +1,8 @@
 # riffle
 
-A Solana backend that indexes liquidity pools, computes a set of indicators over them at several
-timeframes, and serves the result through a read-only Telegram bot. It ranks pools by what they
-pay net of adverse selection rather than by what is trending.
+LP fee farming on Solana. A backend that indexes liquidity pools, computes a set of indicators over
+them at several timeframes, and serves the result through a read-only Telegram bot. It ranks pools
+by the LP fees they actually pay net of adverse selection, rather than by what is trending.
 
 The ranking is written once, against a venue abstraction, because the algebra is shared across
 concentrated-liquidity designs -- they differ by a geometry term, not by structure. Meteora DLMM
