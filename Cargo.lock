@@ -1475,10 +1475,29 @@ dependencies = [
 name = "crawler"
 version = "0.1.0"
 dependencies = [
+ "bs58",
+ "chrono",
  "clap",
+ "common",
+ "dlmm_decode",
+ "dlmm_math",
  "eyre",
+ "humantime",
+ "lb_clmm",
  "logger",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-transaction-status-client-types",
+ "source",
+ "sqlx",
+ "storage",
  "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -2970,6 +2989,26 @@ dependencies = [
  "js-sys",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "integration"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "dlmm_math",
+ "engine",
+ "eyre",
+ "rust_decimal",
+ "scorer",
+ "serde_json",
+ "sqlx",
+ "storage",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

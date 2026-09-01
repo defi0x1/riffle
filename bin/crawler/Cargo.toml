@@ -4,7 +4,37 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+common = { workspace = true }
 logger = { workspace = true }
+source = { workspace = true }
+dlmm_decode = { workspace = true }
+dlmm_math = { workspace = true }
+storage = { workspace = true }
+
+lb_clmm = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-sdk = { workspace = true }
+
 clap = { workspace = true }
 eyre = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+sqlx = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+
+tracing = { workspace = true }
+humantime = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bs58 = { workspace = true }
+
+# Not in [workspace.dependencies]: needed to read the historical transaction bodies
+# (getTransaction) that a plain-RPC backfill walks; nothing else in the workspace decodes
+# transaction wire format directly since Geyser hands the indexer that shape pre-parsed.
+solana-transaction-status-client-types = "2.3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
