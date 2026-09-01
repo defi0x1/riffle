@@ -10,3 +10,7 @@
 /data
 *.log
 .DS_Store
+
+# Node (miniapp)
+node_modules/
+miniapp/dist/
