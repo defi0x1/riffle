@@ -1,0 +1,18 @@
+[package]
+name = "dlmm_decode"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+lb_clmm = { workspace = true }
+solana-sdk = { workspace = true }
+borsh = { workspace = true, features = ["derive"] }
+eyre = { workspace = true }
+thiserror = { workspace = true }
+# Not in workspace.dependencies: pulled transitively by lb_clmm already (it depends on
+# bytemuck 1.20 for its own #[zero_copy] accounts), so this adds no new supply chain surface.
+# Used for pod_read_unaligned when casting raw account bytes onto lb_clmm's zero-copy structs.
+bytemuck = { version = "1.20", features = ["min_const_generics", "extern_crate_std"] }
+
+[dev-dependencies]
+solana-sdk = { workspace = true }
