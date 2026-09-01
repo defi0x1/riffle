@@ -29,11 +29,21 @@ IDENT_TERMS='\bKeypair\b|\bSigner\b|\bSigningKey\b|\bSecretKey\b'
 FIELD_TERMS='mnemonic|bip-?39|bip-?32|slip-?10|hd.?wallet|coins-bip39|ed25519-hd-key|passphrase|seed[_-]?phrase|private[_-]?key|secret[_-]?key|from_base58_string'
 
 # Files that legitimately need to name the above -- test fixtures exercising a real signer
-# against a local validator, say. Empty today: nothing in this tree needs one yet. Add an
-# entry only for a specific file, with a comment explaining what it's for and why it cannot
-# leak into non-test code; do not add a directory, and do not widen this to make a real
-# finding disappear.
+# against a local validator, say. Add an entry only for a specific file, with a comment
+# explaining what it's for and why it cannot leak into non-test code; do not add a directory,
+# and do not widen this to make a real finding disappear.
+#
+# libraries/dlmm_tx/tests/onchain_validation.rs: an integration test, gated on a reachable
+# validator/RPC endpoint and never part of the normal build, that generates a disposable,
+# throwaway keypair entirely inside the test process to sign a couple of transactions sent to
+# a local validator it also just funded via airdrop -- proving the real program accepts what
+# this crate's builders produce. That keypair is created, used, and discarded within one test
+# run; it never derives from a mnemonic, never persists, and never touches any account this
+# repo's own users control. This is the client-side signing a real wallet does on the user's
+# device (see docs/security.md) reproduced inside a test process so the test can act as that
+# device, not a new capability added to the backend itself.
 ALLOWLIST='
+libraries/dlmm_tx/tests/onchain_validation.rs
 '
 
 SELF='scripts/keyless-guard.sh'

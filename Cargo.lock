@@ -1410,7 +1410,10 @@ dependencies = [
  "dlmm_decode",
  "eyre",
  "serde_json",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
  "solana-sdk",
+ "solana-transaction-error",
  "thiserror 2.0.20",
 ]
 

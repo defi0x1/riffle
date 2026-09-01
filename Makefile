@@ -1,4 +1,4 @@
-.PHONY: lint test build up down migrate fmt provenance
+.PHONY: lint test build up down migrate fmt provenance validate-onchain
 
 lint:
 	@cargo clippy --all-targets --all-features -- -D warnings
@@ -24,3 +24,8 @@ fmt:
 
 provenance:
 	@./scripts/provenance-check.sh
+
+# Validates dlmm_tx's instruction builders against the real, deployed DLMM program -- not part
+# of `make test` because it needs a local validator or network access. See docs/validation.md.
+validate-onchain:
+	@./scripts/validate-onchain.sh

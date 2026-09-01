@@ -17,3 +17,9 @@ serde_json = { workspace = true }
 # transitively by solana-sdk's own "full" feature set (see Cargo.lock), so this adds no new
 # dependency to the build graph -- just names one that's already there.
 bincode = "1.3.3"
+# Only used by tests/onchain_validation.rs, which is gated on a reachable validator or RPC
+# endpoint (see that file's module doc) and never runs in a normal `cargo test`. Both are
+# already in the dependency graph transitively via solana-sdk's own client tooling.
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-transaction-error = "2"
