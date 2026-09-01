@@ -1,11 +1,10 @@
 # Example configuration surface for `indexer`.
 #
-# No binary in this workspace parses YAML -- this file is not read by `indexer` itself.
 # Every setting below is both a CLI flag (kebab-case, e.g. `--rpc-url`) and an environment
 # variable of the same name (SCREAMING_SNAKE_CASE, e.g. RPC_URL); flattened clap groups do
-# not add a prefix, so the keys here are flat on purpose, not a lookup path. To actually use
-# a value, export it into the environment before running the binary (or pass it as a flag);
-# there is no `--config` flag. `docs/configuration.md` and `cargo run --bin indexer -- --help`
+# not add a prefix, so the keys here are flat on purpose, not a lookup path. Pass this file with `--config <path>`:
+# a flag beats an environment variable, which beats this file, which beats the built-in
+# default. An unrecognised key is an error naming the key, not a silent no-op. `docs/configuration.md` and `cargo run --bin indexer -- --help`
 # are the authoritative references -- this file exists so a value and a one-line reason for
 # it are in one place for local development.
 #
