@@ -10,7 +10,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  ci:
+  # format, clippy and test are separate jobs rather than steps in one job so that a failure
+  # in one still lets the others run and report -- a red format job otherwise hides whatever
+  # clippy or the test suite would have found.
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Format check
+        run: cargo fmt --check
+
+  clippy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,14 +43,101 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Format check
-        run: cargo fmt --check
-
+      # Not --all-features: that turns on storage's `db-tests` feature, whose test-only
+      # sqlx::query! calls have no entry in the committed .sqlx cache (only non-test code
+      # was ever `cargo sqlx prepare`d), so SQLX_OFFLINE=true fails to compile them here --
+      # confirmed by running this exact command locally. The database-backed job below
+      # builds and runs that feature against a live database instead, where offline query
+      # verification isn't needed.
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # No database and no DATABASE_URL here on purpose: storage's `db-tests` feature (only
+      # turned on by --all-features) and the `integration` crate's database-gated tests must
+      # both still build offline and pass without a database reachable -- the former by not
+      # compiling at all without the feature, the latter by skipping cleanly at runtime. The
+      # database-backed run of both lives in the `integration` job below.
       - name: Test
-        run: cargo test --all-targets --all-features
+        run: cargo test --workspace --all-targets
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: feefarm
+          POSTGRES_PASSWORD: feefarm
+          POSTGRES_DB: feefarm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U feefarm -d feefarm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://feefarm:feefarm@localhost:5432/feefarm
+      # Overrides the top-level "true": storage's `db-tests` feature has test-only
+      # sqlx::query! calls with no entry in the committed .sqlx cache (only the crate's
+      # non-test code has ever been through `cargo sqlx prepare`), so SQLX_OFFLINE=true
+      # fails to compile them here even with the service container up -- confirmed by
+      # running it locally. Migrating before the build (below) means the live schema is
+      # there for the macros to verify against instead.
+      SQLX_OFFLINE: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres,rustls --locked
+
+      # Applied once up front so SQLX_OFFLINE=false has a real schema to check query!
+      # calls against at compile time; both steps below also apply migrations themselves
+      # at runtime (storage::run_migrations is idempotent), so this is purely to unblock
+      # compilation, not a substitute for either test proving migrations apply cleanly.
+      - name: Run migrations
+        run: sqlx migrate run --source migrations
+
+      # storage's own database-gated unit tests (behind the `db-tests` feature) and the
+      # end-to-end suite in `tests/`, both against the live service container.
+      - name: Storage database tests
+        run: cargo test -p storage --features db-tests
+
+      - name: Integration suite
+        run: cargo test -p integration
 
   provenance:
     runs-on: ubuntu-latest

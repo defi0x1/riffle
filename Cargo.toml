@@ -1,5 +1,5 @@
 [workspace]
-members = ["bin/*", "libraries/*"]
+members = ["bin/*", "libraries/*", "tests"]
 resolver = "2"
 
 [workspace.package]
@@ -18,6 +18,17 @@ storage = { path = "libraries/storage" }
 engine = { path = "libraries/engine" }
 
 # Solana
+#
+# lb_clmm is Meteora's on-chain DLMM program crate, and this is intentionally a local path
+# dependency rather than a pinned git dependency on a public repository. MeteoraAg/dlmm-sdk
+# removed the on-chain program source from its history in March 2025 -- the last commit that
+# had it is v0.8.2, built against anchor-lang 0.28 and solana-program ~1.16, and the repository
+# has published only the client SDK since. That snapshot's dependency tree does not resolve
+# alongside this workspace's solana-sdk 2.x stack (a hard curve25519-dalek version conflict at
+# `cargo metadata` time, verified directly) and predates symbols this workspace's decode layer
+# depends on, so it cannot stand in for the version actually built and tested against. A clone
+# of this repository needs a local checkout of the matching source at ../DLMM until that gap is
+# closed some other way.
 lb_clmm = { path = "../DLMM/programs/lb_clmm", default-features = false, features = ["no-entrypoint"] }
 solana-rpc-client = "2.1"
 solana-rpc-client-api = "2.1"
@@ -58,6 +69,7 @@ eyre = "0.6"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 humantime = "2"
 humantime-serde = "1"
 chrono = { version = "0.4", features = ["serde"] }
