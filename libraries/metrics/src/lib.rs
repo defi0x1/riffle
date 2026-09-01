@@ -29,7 +29,9 @@ impl Config {
 
     pub async fn serve(&self, ct: CancellationToken) -> eyre::Result<()> {
         let addr = format!("0.0.0.0:{}", self.metrics_port);
-        let listener = tokio::net::TcpListener::bind(&addr).await.wrap_err_with(|| "Binding metrics listener")?;
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .wrap_err_with(|| "Binding metrics listener")?;
 
         tracing::info!("Metrics server listening on {}", addr);
 

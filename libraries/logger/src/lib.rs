@@ -44,7 +44,9 @@ impl Config {
 
     fn install(&self) -> eyre::Result<()> {
         let filter = EnvFilter::try_new(&self.log_level).wrap_err_with(|| "Parsing log level")?;
-        let subscriber = tracing_subscriber::fmt().with_env_filter(filter).with_line_number(true);
+        let subscriber = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_line_number(true);
 
         match self.log_format {
             LogFormat::Compact => subscriber.compact().init(),
